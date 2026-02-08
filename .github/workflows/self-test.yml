@@ -1,0 +1,31 @@
+name: Self Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-action:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Assay and generate test pack
+        run: |
+          pip install assay-ai
+          assay demo-pack
+
+      - name: Verify with action (should pass)
+        uses: ./
+        with:
+          pack-path: 'proof_pack_*_pass/'
+          require-claim-pass: 'true'
+          comment-on-pr: 'false'
+          upload-artifact: 'true'

@@ -1,0 +1,241 @@
+name: 'Assay Verify Pack'
+description: 'Verify AI evidence bundles (Proof Packs) for integrity and behavioral claims'
+author: 'Haserjian'
+
+branding:
+  icon: 'shield'
+  color: 'green'
+
+inputs:
+  pack-path:
+    description: 'Path to Proof Pack directory (glob supported)'
+    required: false
+    default: 'proof_pack_*/'
+  require-claim-pass:
+    description: 'Fail the step if any claim check is not PASS'
+    required: false
+    default: 'true'
+  lock-file:
+    description: 'Path to assay.lock for pinned verification semantics'
+    required: false
+    default: ''
+  comment-on-pr:
+    description: 'Post a summary comment on the pull request'
+    required: false
+    default: 'true'
+  upload-artifact:
+    description: 'Upload pack as a workflow artifact'
+    required: false
+    default: 'true'
+  assay-version:
+    description: 'assay-ai version to install (default: latest)'
+    required: false
+    default: ''
+  python-version:
+    description: 'Python version to use'
+    required: false
+    default: '3.11'
+
+outputs:
+  integrity:
+    description: 'PASS or FAIL'
+    value: ${{ steps.verify.outputs.integrity }}
+  claims:
+    description: 'PASS, FAIL, or N/A'
+    value: ${{ steps.verify.outputs.claims }}
+  exit-code:
+    description: '0 (all pass), 1 (claim fail), 2 (integrity fail)'
+    value: ${{ steps.verify.outputs.exit_code }}
+  pack-count:
+    description: 'Number of packs verified'
+    value: ${{ steps.verify.outputs.pack_count }}
+  summary:
+    description: 'Markdown summary of verification results'
+    value: ${{ steps.verify.outputs.summary }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install Assay
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.assay-version }}" ]; then
+          pip install "assay-ai==${{ inputs.assay-version }}" --quiet
+        else
+          pip install assay-ai --quiet
+        fi
+
+    - name: Verify Proof Packs
+      id: verify
+      shell: bash
+      run: |
+        set +e
+        PACK_COUNT=0
+        WORST_EXIT=0
+        SUMMARY=""
+        INTEGRITY_ALL="PASS"
+        CLAIMS_ALL="PASS"
+
+        shopt -s nullglob
+        PACKS=(${{ inputs.pack-path }})
+        shopt -u nullglob
+
+        if [ ${#PACKS[@]} -eq 0 ]; then
+          echo "::error::No Proof Pack directories matched: ${{ inputs.pack-path }}"
+          echo "integrity=FAIL" >> "$GITHUB_OUTPUT"
+          echo "claims=N/A" >> "$GITHUB_OUTPUT"
+          echo "exit_code=2" >> "$GITHUB_OUTPUT"
+          echo "pack_count=0" >> "$GITHUB_OUTPUT"
+          echo "summary=No packs found matching \`${{ inputs.pack-path }}\`" >> "$GITHUB_OUTPUT"
+          exit 2
+        fi
+
+        for PACK_DIR in "${PACKS[@]}"; do
+          if [ ! -d "$PACK_DIR" ]; then
+            continue
+          fi
+
+          PACK_COUNT=$((PACK_COUNT + 1))
+          PACK_NAME=$(basename "$PACK_DIR")
+
+          # Build verify command
+          VERIFY_CMD="assay verify-pack $PACK_DIR"
+          if [ "${{ inputs.require-claim-pass }}" = "true" ]; then
+            VERIFY_CMD="$VERIFY_CMD --require-claim-pass"
+          fi
+          if [ -n "${{ inputs.lock-file }}" ]; then
+            VERIFY_CMD="$VERIFY_CMD --lock ${{ inputs.lock-file }}"
+          fi
+
+          # Run verification and capture output
+          OUTPUT=$($VERIFY_CMD 2>&1)
+          EXIT_CODE=$?
+
+          if [ $EXIT_CODE -gt $WORST_EXIT ]; then
+            WORST_EXIT=$EXIT_CODE
+          fi
+
+          # Parse verify_report.json for structured data
+          REPORT="$PACK_DIR/verify_report.json"
+          if [ -f "$REPORT" ]; then
+            INTEGRITY=$(python3 -c "import json; d=json.load(open('$REPORT')); print(d.get('receipt_integrity','UNKNOWN'))" 2>/dev/null || echo "UNKNOWN")
+            CLAIM_CHECK=$(python3 -c "import json; d=json.load(open('$REPORT')); print(d.get('claim_check','N/A'))" 2>/dev/null || echo "N/A")
+            RECEIPT_COUNT=$(python3 -c "import json; d=json.load(open('$REPORT')); print(d.get('n_receipts', d.get('receipt_count','?')))" 2>/dev/null || echo "?")
+          else
+            INTEGRITY="UNKNOWN"
+            CLAIM_CHECK="N/A"
+            RECEIPT_COUNT="?"
+          fi
+
+          # Parse pack_manifest.json for attestation
+          MANIFEST="$PACK_DIR/pack_manifest.json"
+          if [ -f "$MANIFEST" ]; then
+            PACK_ID=$(python3 -c "import json; d=json.load(open('$MANIFEST')); print(d.get('attestation',{}).get('pack_id','?'))" 2>/dev/null || echo "?")
+            MODE=$(python3 -c "import json; d=json.load(open('$MANIFEST')); print(d.get('attestation',{}).get('mode','?'))" 2>/dev/null || echo "?")
+          else
+            PACK_ID="?"
+            MODE="?"
+          fi
+
+          if [ "$INTEGRITY" != "PASS" ]; then
+            INTEGRITY_ALL="FAIL"
+          fi
+          if [ "$CLAIM_CHECK" = "FAIL" ]; then
+            CLAIMS_ALL="FAIL"
+          fi
+
+          # Build per-pack summary row
+          if [ "$INTEGRITY" = "PASS" ] && [ "$CLAIM_CHECK" = "PASS" ]; then
+            STATUS_ICON="[PASS]"
+          elif [ "$INTEGRITY" = "PASS" ] && [ "$CLAIM_CHECK" = "FAIL" ]; then
+            STATUS_ICON="[CLAIM FAIL]"
+          else
+            STATUS_ICON="[INTEGRITY FAIL]"
+          fi
+
+          SUMMARY="${SUMMARY}| \`${PACK_NAME}\` | ${INTEGRITY} | ${CLAIM_CHECK} | ${RECEIPT_COUNT} | ${MODE} |\n"
+
+          echo "::group::$STATUS_ICON $PACK_NAME"
+          echo "$OUTPUT"
+          echo "::endgroup::"
+        done
+
+        echo "integrity=$INTEGRITY_ALL" >> "$GITHUB_OUTPUT"
+        echo "claims=$CLAIMS_ALL" >> "$GITHUB_OUTPUT"
+        echo "exit_code=$WORST_EXIT" >> "$GITHUB_OUTPUT"
+        echo "pack_count=$PACK_COUNT" >> "$GITHUB_OUTPUT"
+
+        # Build full summary markdown
+        FULL_SUMMARY="### Assay Verification\n\n"
+        if [ $WORST_EXIT -eq 0 ]; then
+          FULL_SUMMARY="${FULL_SUMMARY}**Result: PASS**\n\n"
+        elif [ $WORST_EXIT -eq 1 ]; then
+          FULL_SUMMARY="${FULL_SUMMARY}**Result: CLAIM FAIL** (integrity passed, behavioral claims did not)\n\n"
+        else
+          FULL_SUMMARY="${FULL_SUMMARY}**Result: INTEGRITY FAIL** (evidence may be tampered or corrupted)\n\n"
+        fi
+
+        FULL_SUMMARY="${FULL_SUMMARY}| Pack | Integrity | Claims | Receipts | Mode |\n"
+        FULL_SUMMARY="${FULL_SUMMARY}|------|-----------|--------|----------|------|\n"
+        FULL_SUMMARY="${FULL_SUMMARY}${SUMMARY}\n"
+        FULL_SUMMARY="${FULL_SUMMARY}> Exit code: \`${WORST_EXIT}\` (\`0\` = all pass, \`1\` = claim fail, \`2\` = integrity fail)\n"
+        FULL_SUMMARY="${FULL_SUMMARY}>\n"
+        FULL_SUMMARY="${FULL_SUMMARY}> Verified by [assay-ai](https://pypi.org/project/assay-ai/) $(assay version 2>/dev/null | head -1 || echo '')\n"
+
+        # Write to GitHub step summary
+        echo -e "$FULL_SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+
+        # Store summary for PR comment
+        EOF_MARKER="ASSAY_SUMMARY_EOF_$(date +%s)"
+        echo "summary<<${EOF_MARKER}" >> "$GITHUB_OUTPUT"
+        echo -e "$FULL_SUMMARY" >> "$GITHUB_OUTPUT"
+        echo "${EOF_MARKER}" >> "$GITHUB_OUTPUT"
+
+        exit $WORST_EXIT
+
+    - name: Comment on PR
+      if: always() && github.event_name == 'pull_request' && inputs.comment-on-pr == 'true'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const summary = `${{ steps.verify.outputs.summary }}`;
+          if (!summary) return;
+
+          // Find existing Assay comment to update
+          const { data: comments } = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+          });
+          const existing = comments.find(c => c.body.includes('### Assay Verification'));
+
+          const body = summary + '\n\n---\n*Posted by [assay-verify-action](https://github.com/Haserjian/assay-verify-action)*';
+
+          if (existing) {
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: existing.id,
+              body,
+            });
+          } else {
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+          }
+
+    - name: Upload Proof Pack artifact
+      if: always() && inputs.upload-artifact == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: assay-proof-packs
+        path: ${{ inputs.pack-path }}
+        if-no-files-found: ignore
