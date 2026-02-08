@@ -17,15 +17,22 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Assay and generate test pack
+      - name: Install Assay and create test pack
         run: |
           pip install assay-ai
-          assay demo-pack
+          # Create a minimal script that emits receipts
+          cat > /tmp/test_agent.py << 'PYEOF'
+          from assay import emit_receipt
+          emit_receipt("model_call", {"model_id": "test", "total_tokens": 42})
+          emit_receipt("guardian_verdict", {"verdict": "allow", "action": "self-test"})
+          print("Agent run complete")
+          PYEOF
+          # Run through assay to produce a real pack
+          assay run -c receipt_completeness -c guardian_enforcement -- python /tmp/test_agent.py
 
-      - name: Verify with action (should pass)
+      - name: Verify with action
         uses: ./
         with:
-          pack-path: 'proof_pack_*_pass/'
+          pack-path: 'proof_pack_*/'
           require-claim-pass: 'true'
           comment-on-pr: 'false'
-          upload-artifact: 'true'
