@@ -108,8 +108,16 @@ assay lock write --cards receipt_completeness,guardian_enforcement -o assay.lock
 
 Assay is a flight recorder, not a safety certificate.
 
+## Related Repos
+
+| Repo | Role |
+|------|------|
+| [assay](https://github.com/Haserjian/assay) | Core CLI + SDK (canonical source) |
+| [assay-verify-action](https://github.com/Haserjian/assay-verify-action) | GitHub Action for CI verification (this repo) |
+| [assay-ledger](https://github.com/Haserjian/assay-ledger) | Public transparency ledger |
+
 ## Links
 
 - [assay-ai on PyPI](https://pypi.org/project/assay-ai/)
-- [Quickstart docs](https://github.com/Haserjian/ccio/blob/main/docs/README_quickstart.md)
-- [Source](https://github.com/Haserjian/ccio)
+- [Quickstart docs](https://github.com/Haserjian/assay/blob/main/docs/README_quickstart.md)
+- [Assay source](https://github.com/Haserjian/assay)
