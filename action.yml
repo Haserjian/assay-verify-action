@@ -82,7 +82,8 @@ runs:
         CLAIMS_ALL="PASS"
 
         shopt -s nullglob
-        PACKS=(${{ inputs.pack-path }})
+        PACK_GLOB="${{ inputs.pack-path }}"
+        PACKS=($PACK_GLOB)
         shopt -u nullglob
 
         if [ ${#PACKS[@]} -eq 0 ]; then
@@ -121,11 +122,13 @@ runs:
           fi
 
           # Parse verify_report.json for structured data
+          # Fields from VerifyResult.to_dict(): passed (bool), receipt_count (int),
+          # errors, warnings, head_hash. Claims are in claim_verification.passed.
           REPORT="$PACK_DIR/verify_report.json"
           if [ -f "$REPORT" ]; then
-            INTEGRITY=$(python3 -c "import json; d=json.load(open('$REPORT')); print(d.get('receipt_integrity','UNKNOWN'))" 2>/dev/null || echo "UNKNOWN")
-            CLAIM_CHECK=$(python3 -c "import json; d=json.load(open('$REPORT')); print(d.get('claim_check','N/A'))" 2>/dev/null || echo "N/A")
-            RECEIPT_COUNT=$(python3 -c "import json; d=json.load(open('$REPORT')); print(d.get('n_receipts', d.get('receipt_count','?')))" 2>/dev/null || echo "?")
+            INTEGRITY=$(python3 -c "import json; d=json.load(open('$REPORT')); print('PASS' if d.get('passed', False) else 'FAIL')" 2>/dev/null || echo "UNKNOWN")
+            CLAIM_CHECK=$(python3 -c "import json; d=json.load(open('$REPORT')); cv=d.get('claim_verification'); print('N/A' if cv is None else ('PASS' if cv.get('passed', False) else 'FAIL'))" 2>/dev/null || echo "N/A")
+            RECEIPT_COUNT=$(python3 -c "import json; d=json.load(open('$REPORT')); print(d.get('receipt_count', '?'))" 2>/dev/null || echo "?")
           else
             INTEGRITY="UNKNOWN"
             CLAIM_CHECK="N/A"
