@@ -63,9 +63,11 @@ runs:
 
     - name: Install Assay
       shell: bash
+      env:
+        ASSAY_VERSION: ${{ inputs.assay-version }}
       run: |
-        if [ -n "${{ inputs.assay-version }}" ]; then
-          pip install "assay-ai==${{ inputs.assay-version }}" --quiet
+        if [ -n "$ASSAY_VERSION" ]; then
+          pip install "assay-ai==$ASSAY_VERSION" --quiet
         else
           pip install assay-ai --quiet
         fi
@@ -73,6 +75,10 @@ runs:
     - name: Verify Proof Packs
       id: verify
       shell: bash
+      env:
+        INPUT_PACK_PATH: ${{ inputs.pack-path }}
+        INPUT_REQUIRE_CLAIM_PASS: ${{ inputs.require-claim-pass }}
+        INPUT_LOCK_FILE: ${{ inputs.lock-file }}
       run: |
         set +e
         PACK_COUNT=0
@@ -82,17 +88,17 @@ runs:
         CLAIMS_ALL="PASS"
 
         shopt -s nullglob
-        PACK_GLOB="${{ inputs.pack-path }}"
+        PACK_GLOB="$INPUT_PACK_PATH"
         PACKS=($PACK_GLOB)
         shopt -u nullglob
 
         if [ ${#PACKS[@]} -eq 0 ]; then
-          echo "::error::No Proof Pack directories matched: ${{ inputs.pack-path }}"
+          echo "::error::No Proof Pack directories matched: $INPUT_PACK_PATH"
           echo "integrity=FAIL" >> "$GITHUB_OUTPUT"
           echo "claims=N/A" >> "$GITHUB_OUTPUT"
           echo "exit_code=2" >> "$GITHUB_OUTPUT"
           echo "pack_count=0" >> "$GITHUB_OUTPUT"
-          echo "summary=No packs found matching \`${{ inputs.pack-path }}\`" >> "$GITHUB_OUTPUT"
+          echo "summary=No packs found matching \`$INPUT_PACK_PATH\`" >> "$GITHUB_OUTPUT"
           exit 2
         fi
 
@@ -106,11 +112,11 @@ runs:
 
           # Build verify command
           VERIFY_CMD="assay verify-pack $PACK_DIR"
-          if [ "${{ inputs.require-claim-pass }}" = "true" ]; then
+          if [ "$INPUT_REQUIRE_CLAIM_PASS" = "true" ]; then
             VERIFY_CMD="$VERIFY_CMD --require-claim-pass"
           fi
-          if [ -n "${{ inputs.lock-file }}" ]; then
-            VERIFY_CMD="$VERIFY_CMD --lock ${{ inputs.lock-file }}"
+          if [ -n "$INPUT_LOCK_FILE" ]; then
+            VERIFY_CMD="$VERIFY_CMD --lock $INPUT_LOCK_FILE"
           fi
 
           # Run verification and capture output
@@ -204,9 +210,11 @@ runs:
     - name: Comment on PR
       if: always() && github.event_name == 'pull_request' && inputs.comment-on-pr == 'true'
       uses: actions/github-script@v7
+      env:
+        VERIFY_SUMMARY: ${{ steps.verify.outputs.summary }}
       with:
         script: |
-          const summary = `${{ steps.verify.outputs.summary }}`;
+          const summary = process.env.VERIFY_SUMMARY || '';
           if (!summary) return;
 
           // Find existing Assay comment to update
