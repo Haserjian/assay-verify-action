@@ -10,11 +10,14 @@ On every PR, you get a comment like:
 
 ### Assay Verification
 
-**Result: PASS**
+> [!WARNING]
+> SHADOW MODE -- not enforced. At least one pack was produced in shadow mode.
+
+**Result: SHADOW MODE -- not enforced**
 
 | Pack | Integrity | Claims | Receipts | Mode |
 |------|-----------|--------|----------|------|
-| `proof_pack_abc123` | PASS | PASS | 12 | shadow |
+| `proof_pack_abc123` | PASS | PASS | 12 | shadow (not enforced) |
 
 > Exit code: `0` (`0` = all pass, `1` = claim fail, `2` = integrity fail)
 

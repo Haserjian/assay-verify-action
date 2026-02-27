@@ -91,6 +91,7 @@ runs:
         SUMMARY=""
         INTEGRITY_ALL="PASS"
         CLAIMS_ALL="PASS"
+        HAS_SHADOW_MODE=0
 
         shopt -s nullglob
         PACK_GLOB="$INPUT_PACK_PATH"
@@ -193,6 +194,12 @@ runs:
             PACK_ID="?"
             MODE="?"
           fi
+          MODE_LC=$(echo "$MODE" | tr '[:upper:]' '[:lower:]')
+          MODE_LABEL="$MODE"
+          if [ "$MODE_LC" = "shadow" ]; then
+            HAS_SHADOW_MODE=1
+            MODE_LABEL="shadow (not enforced)"
+          fi
 
           if [ "$INTEGRITY" != "PASS" ]; then
             INTEGRITY_ALL="FAIL"
@@ -203,14 +210,18 @@ runs:
 
           # Build per-pack summary row
           if [ "$INTEGRITY" = "PASS" ] && [ "$CLAIM_CHECK" = "PASS" ]; then
-            STATUS_ICON="[PASS]"
+            if [ "$MODE_LC" = "shadow" ]; then
+              STATUS_ICON="[SHADOW MODE]"
+            else
+              STATUS_ICON="[PASS]"
+            fi
           elif [ "$INTEGRITY" = "PASS" ] && [ "$CLAIM_CHECK" = "FAIL" ]; then
             STATUS_ICON="[CLAIM FAIL]"
           else
             STATUS_ICON="[INTEGRITY FAIL]"
           fi
 
-          SUMMARY="${SUMMARY}| \`${PACK_NAME}\` | ${INTEGRITY} | ${CLAIM_CHECK} | ${RECEIPT_COUNT} | ${MODE} |\n"
+          SUMMARY="${SUMMARY}| \`${PACK_NAME}\` | ${INTEGRITY} | ${CLAIM_CHECK} | ${RECEIPT_COUNT} | ${MODE_LABEL} |\n"
 
           echo "::group::$STATUS_ICON $PACK_NAME"
           echo "$OUTPUT"
@@ -224,8 +235,17 @@ runs:
 
         # Build full summary markdown
         FULL_SUMMARY="### Assay Verification\n\n"
+        if [ $HAS_SHADOW_MODE -eq 1 ]; then
+          FULL_SUMMARY="${FULL_SUMMARY}> [!WARNING]\n"
+          FULL_SUMMARY="${FULL_SUMMARY}> SHADOW MODE -- not enforced. At least one pack was produced in shadow mode.\n"
+          FULL_SUMMARY="${FULL_SUMMARY}> This run logged checks but did not enforce policy gates for shadow-mode packs.\n\n"
+        fi
         if [ $WORST_EXIT -eq 0 ]; then
-          FULL_SUMMARY="${FULL_SUMMARY}**Result: PASS**\n\n"
+          if [ $HAS_SHADOW_MODE -eq 1 ]; then
+            FULL_SUMMARY="${FULL_SUMMARY}**Result: SHADOW MODE -- not enforced**\n\n"
+          else
+            FULL_SUMMARY="${FULL_SUMMARY}**Result: PASS**\n\n"
+          fi
         elif [ $WORST_EXIT -eq 1 ]; then
           FULL_SUMMARY="${FULL_SUMMARY}**Result: CLAIM FAIL** (integrity passed, behavioral claims did not)\n\n"
         else

@@ -31,11 +31,29 @@ jobs:
           assay run -c receipt_completeness -c guardian_enforcement -- python /tmp/test_agent.py
 
       - name: Verify with action
+        id: verify
         uses: ./
         with:
           pack-path: 'proof_pack_*/'
           require-claim-pass: 'true'
           comment-on-pr: 'false'
+
+      - name: Assert shadow-mode summary labeling
+        shell: bash
+        env:
+          VERIFY_SUMMARY: ${{ steps.verify.outputs.summary }}
+        run: |
+          if [[ "$VERIFY_SUMMARY" != *"SHADOW MODE -- not enforced"* ]]; then
+            echo "::error::Expected shadow warning in summary output"
+            echo "$VERIFY_SUMMARY"
+            exit 1
+          fi
+          if [[ "$VERIFY_SUMMARY" == *"**Result: PASS**"* ]]; then
+            echo "::error::Shadow mode must not be labeled as PASS"
+            echo "$VERIFY_SUMMARY"
+            exit 1
+          fi
+          echo "Shadow summary labeling test passed."
 
   test-zero-pack:
     runs-on: ubuntu-latest
