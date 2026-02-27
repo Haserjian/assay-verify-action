@@ -36,3 +36,67 @@ jobs:
           pack-path: 'proof_pack_*/'
           require-claim-pass: 'true'
           comment-on-pr: 'false'
+
+  test-zero-pack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify with no packs (require-pack true)
+        id: verify
+        uses: ./
+        continue-on-error: true
+        with:
+          pack-path: 'proof_pack_*/'
+          require-pack: 'true'
+          comment-on-pr: 'false'
+
+      - name: Assert exit code is 2
+        shell: bash
+        run: |
+          EXIT="${{ steps.verify.outputs.exit-code }}"
+          PACK_COUNT="${{ steps.verify.outputs.pack-count }}"
+          OUTCOME="${{ steps.verify.outcome }}"
+          echo "exit-code=$EXIT  pack-count=$PACK_COUNT  outcome=$OUTCOME"
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "::error::Expected step to fail but outcome was: $OUTCOME"
+            exit 1
+          fi
+          if [ "$EXIT" != "2" ]; then
+            echo "::error::Expected exit-code=2 but got: $EXIT"
+            exit 1
+          fi
+          if [ "$PACK_COUNT" != "0" ]; then
+            echo "::error::Expected pack-count=0 but got: $PACK_COUNT"
+            exit 1
+          fi
+          echo "Zero-pack enforcement test passed."
+
+  test-zero-pack-skip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify with no packs (require-pack false)
+        id: verify
+        uses: ./
+        with:
+          pack-path: 'proof_pack_*/'
+          require-pack: 'false'
+          comment-on-pr: 'false'
+
+      - name: Assert exit code is 0
+        shell: bash
+        run: |
+          EXIT="${{ steps.verify.outputs.exit-code }}"
+          OUTCOME="${{ steps.verify.outcome }}"
+          echo "exit-code=$EXIT  outcome=$OUTCOME"
+          if [ "$OUTCOME" != "success" ]; then
+            echo "::error::Expected step to succeed but outcome was: $OUTCOME"
+            exit 1
+          fi
+          if [ "$EXIT" != "0" ]; then
+            echo "::error::Expected exit-code=0 but got: $EXIT"
+            exit 1
+          fi
+          echo "Zero-pack skip test passed."

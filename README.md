@@ -51,6 +51,7 @@ jobs:
 | Input | Default | Description |
 |-------|---------|-------------|
 | `pack-path` | `proof_pack_*/` | Path to Proof Pack directory (glob supported) |
+| `require-pack` | `true` | Fail if PR has file changes but no Proof Pack (set `false` for docs-only repos) |
 | `require-claim-pass` | `true` | Fail if any claim check is not PASS |
 | `lock-file` | | Path to `assay.lock` for pinned verification semantics |
 | `comment-on-pr` | `true` | Post a summary comment on the pull request |
