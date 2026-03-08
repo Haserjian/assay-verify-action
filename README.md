@@ -121,6 +121,7 @@ Assay is a flight recorder, not a safety certificate.
 | [assay](https://github.com/Haserjian/assay) | Core CLI + SDK (canonical source) |
 | [assay-verify-action](https://github.com/Haserjian/assay-verify-action) | GitHub Action for CI verification (this repo) |
 | [assay-ledger](https://github.com/Haserjian/assay-ledger) | Public transparency ledger |
+| [assay-proof-gallery](https://github.com/Haserjian/assay-proof-gallery) | Live demo packs (PASS / HONEST FAIL / TAMPERED) |
 
 ## Links
 
