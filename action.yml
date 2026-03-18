@@ -31,6 +31,14 @@ inputs:
     description: 'Fail if PR has file changes but no Proof Pack (set false for docs-only repos)'
     required: false
     default: 'true'
+  trust-target:
+    description: 'Trust evaluation target (local_verify, ci_gate, publication). Advisory only — does not affect exit codes.'
+    required: false
+    default: ''
+  trust-policy-dir:
+    description: 'Directory containing signers.yaml and acceptance.yaml for trust evaluation'
+    required: false
+    default: ''
   assay-version:
     description: 'assay-ai version to install (default: latest)'
     required: false
@@ -84,6 +92,9 @@ runs:
         INPUT_REQUIRE_CLAIM_PASS: ${{ inputs.require-claim-pass }}
         INPUT_LOCK_FILE: ${{ inputs.lock-file }}
         INPUT_REQUIRE_PACK: ${{ inputs.require-pack }}
+        INPUT_TRUST_TARGET: ${{ inputs.trust-target }}
+        INPUT_TRUST_POLICY_DIR: ${{ inputs.trust-policy-dir }}
+        ACTION_PATH: ${{ github.action_path }}
       run: |
         set +e
         PACK_COUNT=0
@@ -166,6 +177,16 @@ runs:
           # Run verification and capture output
           OUTPUT=$($VERIFY_CMD 2>&1)
           EXIT_CODE=$?
+
+          # Run trust evaluation if requested (--json mode, advisory only)
+          TRUST_JSON=""
+          if [ -n "$INPUT_TRUST_TARGET" ]; then
+            TRUST_CMD="assay verify-pack $PACK_DIR --json --trust-target $INPUT_TRUST_TARGET"
+            if [ -n "$INPUT_TRUST_POLICY_DIR" ]; then
+              TRUST_CMD="$TRUST_CMD --trust-policy-dir $INPUT_TRUST_POLICY_DIR"
+            fi
+            TRUST_JSON=$($TRUST_CMD 2>/dev/null || true)
+          fi
 
           if [ $EXIT_CODE -gt $WORST_EXIT ]; then
             WORST_EXIT=$EXIT_CODE
@@ -258,6 +279,14 @@ runs:
         FULL_SUMMARY="${FULL_SUMMARY}> Exit code: \`${WORST_EXIT}\` (\`0\` = all pass, \`1\` = claim fail, \`2\` = integrity fail)\n"
         FULL_SUMMARY="${FULL_SUMMARY}>\n"
         FULL_SUMMARY="${FULL_SUMMARY}> Verified by [assay-ai](https://pypi.org/project/assay-ai/) $(assay version 2>/dev/null | head -1 || echo '')\n"
+
+        # --- Trust evaluation summary (advisory, from last pack's trust block) ---
+        if [ -n "$INPUT_TRUST_TARGET" ] && [ -n "$TRUST_JSON" ] && command -v python3 >/dev/null 2>&1; then
+          TRUST_SECTION=$(python3 "${ACTION_PATH}/scripts/render-trust-summary.py" "$TRUST_JSON" 2>/dev/null || true)
+          if [ -n "$TRUST_SECTION" ]; then
+            FULL_SUMMARY="${FULL_SUMMARY}${TRUST_SECTION}\n"
+          fi
+        fi
 
         # Write to GitHub step summary
         echo -e "$FULL_SUMMARY" >> "$GITHUB_STEP_SUMMARY"
