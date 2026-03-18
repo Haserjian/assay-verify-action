@@ -55,6 +55,78 @@ jobs:
           fi
           echo "Shadow summary labeling test passed."
 
+  test-trust-enforcement:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Assay and create test pack
+        run: |
+          pip install assay-ai
+          cat > /tmp/test_agent.py << 'PYEOF'
+          from assay import emit_receipt
+          emit_receipt("model_call", {"model_id": "test", "total_tokens": 42})
+          print("Agent run complete")
+          PYEOF
+          assay run -c receipt_completeness -- python /tmp/test_agent.py
+
+      - name: Create rejecting trust policy
+        run: |
+          mkdir -p trust-reject
+          # Registry with a fingerprint that won't match the pack signer
+          cat > trust-reject/signers.yaml << 'YAML'
+          signers:
+            - signer_id: only-allowed-signer
+              fingerprint: "0000000000000000000000000000000000000000000000000000000000000000"
+              lifecycle: active
+              grants:
+                - artifact_class: proof_pack
+                  purpose: "*"
+          YAML
+          # Acceptance that rejects unrecognized signers for ci_gate
+          cat > trust-reject/acceptance.yaml << 'YAML'
+          rules:
+            - artifact_class: proof_pack
+              verification_level: signature_verified
+              authorization_status: authorized
+              target: ci_gate
+              decision: accept
+              reason: "Authorized signer"
+            - artifact_class: "*"
+              verification_level: "*"
+              authorization_status: "*"
+              target: ci_gate
+              decision: reject
+              reason: "UNRECOGNIZED_SIGNER"
+          YAML
+
+      - name: Verify with enforcement (expect failure)
+        id: enforce
+        continue-on-error: true
+        uses: ./
+        with:
+          pack-path: 'proof_pack_*/'
+          trust-target: 'ci_gate'
+          trust-policy-dir: 'trust-reject/'
+          enforce-trust: 'true'
+          comment-on-pr: 'false'
+
+      - name: Assert enforcement triggered failure
+        shell: bash
+        run: |
+          OUTCOME="${{ steps.enforce.outcome }}"
+          echo "enforce outcome=$OUTCOME"
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "::error::Expected enforcement to fail but outcome was: $OUTCOME"
+            exit 1
+          fi
+          echo "Trust enforcement integration test passed."
+
   test-zero-pack:
     runs-on: ubuntu-latest
     steps:
