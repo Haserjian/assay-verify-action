@@ -157,6 +157,9 @@ runs:
           exit 2
         fi
 
+        TRUST_RECORDS_FILE=$(mktemp)
+        echo "[]" > "$TRUST_RECORDS_FILE"
+
         for PACK_DIR in "${PACKS[@]}"; do
           if [ ! -d "$PACK_DIR" ]; then
             continue
@@ -179,13 +182,15 @@ runs:
           EXIT_CODE=$?
 
           # Run trust evaluation if requested (--json mode, advisory only)
-          TRUST_JSON=""
           if [ -n "$INPUT_TRUST_TARGET" ]; then
             TRUST_CMD="assay verify-pack $PACK_DIR --json --trust-target $INPUT_TRUST_TARGET"
             if [ -n "$INPUT_TRUST_POLICY_DIR" ]; then
               TRUST_CMD="$TRUST_CMD --trust-policy-dir $INPUT_TRUST_POLICY_DIR"
             fi
-            TRUST_JSON=$($TRUST_CMD 2>/dev/null || true)
+            _PACK_TRUST_JSON=$($TRUST_CMD 2>/dev/null || true)
+            if [ -n "$_PACK_TRUST_JSON" ] && command -v python3 >/dev/null 2>&1; then
+              python3 "${ACTION_PATH}/scripts/accumulate-trust.py" "$TRUST_RECORDS_FILE" "$_PACK_TRUST_JSON" "$PACK_NAME" 2>/dev/null || true
+            fi
           fi
 
           if [ $EXIT_CODE -gt $WORST_EXIT ]; then
@@ -280,17 +285,19 @@ runs:
         FULL_SUMMARY="${FULL_SUMMARY}>\n"
         FULL_SUMMARY="${FULL_SUMMARY}> Verified by [assay-ai](https://pypi.org/project/assay-ai/) $(assay version 2>/dev/null | head -1 || echo '')\n"
 
-        # --- Trust evaluation summary (advisory, from last pack's trust block) ---
-        if [ -n "$INPUT_TRUST_TARGET" ] && [ -n "$TRUST_JSON" ] && command -v python3 >/dev/null 2>&1; then
+        # --- Trust evaluation summary (one section per pack, advisory only) ---
+        if [ -n "$INPUT_TRUST_TARGET" ] && [ -s "$TRUST_RECORDS_FILE" ] && command -v python3 >/dev/null 2>&1; then
           TRUST_RENDER_ERR=$(mktemp)
-          TRUST_SECTION=$(printf '%s' "$TRUST_JSON" | python3 "${ACTION_PATH}/scripts/render-trust-summary.py" 2>"$TRUST_RENDER_ERR" || true)
+          TRUST_SECTION=$(cat "$TRUST_RECORDS_FILE" | python3 "${ACTION_PATH}/scripts/render-trust-summary.py" 2>"$TRUST_RENDER_ERR" || true)
           if [ -n "$TRUST_SECTION" ]; then
             FULL_SUMMARY="${FULL_SUMMARY}${TRUST_SECTION}\n"
           elif [ -s "$TRUST_RENDER_ERR" ]; then
-            echo "::warning::Trust summary rendering failed: $(cat "$TRUST_RENDER_ERR")"
+            _WARN_MSG=$(tr '\n' ' ' < "$TRUST_RENDER_ERR" | sed 's/[[:space:]]\+/ /g' | cut -c1-500)
+            echo "::warning::Trust summary rendering failed: ${_WARN_MSG}"
           fi
           rm -f "$TRUST_RENDER_ERR"
         fi
+        rm -f "$TRUST_RECORDS_FILE"
 
         # Write to GitHub step summary
         echo -e "$FULL_SUMMARY" >> "$GITHUB_STEP_SUMMARY"

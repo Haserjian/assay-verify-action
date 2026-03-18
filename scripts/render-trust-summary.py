@@ -1,32 +1,32 @@
 #!/usr/bin/env python3
-"""Render trust evaluation section from assay verify-pack --json output.
+"""Render trust evaluation sections from assay verify-pack output.
 
-Usage: render-trust-summary.py <json_string>
-Outputs markdown trust summary section to stdout. Empty output if no trust block.
+Accepts JSON from stdin or first positional arg.
+
+Input formats:
+  1. Single verify-pack JSON: {"trust": {...}, ...}
+  2. List of pack trust records: [{"pack_name": "...", "trust": {...}}, ...]
+
+Outputs markdown trust summary to stdout. Empty output if no trust data.
 """
 import json
 import sys
 
 
-def render_trust_summary(json_str: str) -> str:
-    """Extract trust block from verify-pack JSON and render markdown summary."""
-    try:
-        d = json.loads(json_str)
-    except (json.JSONDecodeError, TypeError):
-        return ""
+def _render_one_trust(trust: dict, pack_name: str = "") -> list[str]:
+    """Render a single trust block into markdown lines."""
+    target = trust.get("acceptance", {}).get("target", "?")
+    auth_st = trust.get("authorization", {}).get("status", "?")
+    acc_dec = trust.get("acceptance", {}).get("decision", "?")
+    auth_rc = trust.get("authorization", {}).get("reason_codes", [])
+    acc_rc = trust.get("acceptance", {}).get("reason_codes", [])
+    errs = trust.get("load_errors", [])
 
-    t = d.get("trust")
-    if not t:
-        return ""
+    header = "### Trust Evaluation"
+    if pack_name:
+        header = "### Trust: `%s`" % pack_name
 
-    target = t.get("acceptance", {}).get("target", "?")
-    auth_st = t.get("authorization", {}).get("status", "?")
-    acc_dec = t.get("acceptance", {}).get("decision", "?")
-    auth_rc = t.get("authorization", {}).get("reason_codes", [])
-    acc_rc = t.get("acceptance", {}).get("reason_codes", [])
-    errs = t.get("load_errors", [])
-
-    out = ["\n### Trust Evaluation\n"]
+    out = ["", header, ""]
     out.append("| Field | Value |")
     out.append("|-------|-------|")
     out.append("| Target | `%s` |" % target)
@@ -44,12 +44,40 @@ def render_trust_summary(json_str: str) -> str:
             out.append("> - %s" % e)
         out.append("")
 
-    out.append("> Trust evaluation is advisory only and does not affect the exit code.\n")
-    return "\n".join(out)
+    return out
+
+
+def render_trust_summary(json_str: str) -> str:
+    """Parse trust data and render markdown summary."""
+    try:
+        data = json.loads(json_str)
+    except (json.JSONDecodeError, TypeError):
+        return ""
+
+    sections: list[str] = []
+
+    if isinstance(data, list):
+        # List of pack trust records: [{"pack_name": ..., "trust": ...}, ...]
+        for record in data:
+            trust = record.get("trust")
+            if trust:
+                pack_name = record.get("pack_name", "")
+                sections.extend(_render_one_trust(trust, pack_name))
+    elif isinstance(data, dict):
+        # Single verify-pack JSON: {"trust": {...}, ...}
+        trust = data.get("trust")
+        if trust:
+            sections.extend(_render_one_trust(trust))
+
+    if not sections:
+        return ""
+
+    sections.append("> Trust evaluation is advisory only and does not affect the exit code.")
+    sections.append("")
+    return "\n".join(sections)
 
 
 if __name__ == "__main__":
-    # Accept JSON from positional arg or stdin
     if len(sys.argv) >= 2:
         json_str = sys.argv[1]
     elif not sys.stdin.isatty():
