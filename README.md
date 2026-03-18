@@ -61,8 +61,51 @@ jobs:
 | `lock-file` | | Path to `assay.lock` for pinned verification semantics |
 | `comment-on-pr` | `true` | Post a summary comment on the pull request |
 | `upload-artifact` | `true` | Upload pack as a workflow artifact |
+| `trust-target` | | Trust evaluation target (`local_verify`, `ci_gate`, `publication`). Advisory unless `enforce-trust` is set. |
+| `trust-policy-dir` | | Directory containing `signers.yaml` and `acceptance.yaml` |
+| `enforce-trust` | `false` | When `true`, fail the step if trust acceptance is `reject` for the given target. Requires clean policy load. |
 | `assay-version` | latest | Specific `assay-ai` version to install |
 | `python-version` | `3.11` | Python version to use |
+
+## Trust evaluation
+
+The action can evaluate trust policy alongside verification. Trust is
+**advisory by default** and does not affect exit codes unless you opt in.
+
+### Advisory mode (default)
+
+```yaml
+- uses: Haserjian/assay-verify-action@v1
+  with:
+    pack-path: 'proof_pack_*/'
+    trust-target: 'ci_gate'
+    trust-policy-dir: 'trust/'
+```
+
+Shows trust authorization and acceptance status in the summary.
+Does not affect pass/fail.
+
+### Enforced mode
+
+```yaml
+- uses: Haserjian/assay-verify-action@v1
+  with:
+    pack-path: 'proof_pack_*/'
+    trust-target: 'ci_gate'
+    trust-policy-dir: 'trust/'
+    enforce-trust: 'true'
+```
+
+Fails the step (exit 1) if any pack is **cleanly rejected** for the target.
+
+Enforcement rules:
+- Only triggers when acceptance is explicitly `reject`
+- Never triggers when trust is `not_evaluated` (no policy loaded)
+- Never triggers when policy has load errors (broken config stays advisory)
+- Never triggers on `warn` or `accept`
+
+This means: broken config does not block your pipeline. Only a deliberate
+policy rejection causes enforcement failure.
 
 ## Artifact uploads
 
