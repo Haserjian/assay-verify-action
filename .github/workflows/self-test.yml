@@ -106,6 +106,9 @@ jobs:
       - name: Run trust rendering unit tests
         run: python -m pytest tests/ -v
 
+      - name: Run trust integration tests
+        run: bash tests/test_trust_integration.sh
+
   test-zero-pack-skip:
     runs-on: ubuntu-latest
     steps:

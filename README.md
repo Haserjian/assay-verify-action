@@ -104,6 +104,9 @@ Enforcement rules:
 - Never triggers when policy has load errors (broken config stays advisory)
 - Never triggers on `warn` or `accept`
 
+If multiple packs are verified, any single clean reject for the enforced
+target fails the step.
+
 This means: broken config does not block your pipeline. Only a deliberate
 policy rejection causes enforcement failure.
 
