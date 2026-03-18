@@ -49,8 +49,13 @@ def render_trust_summary(json_str: str) -> str:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
+    # Accept JSON from positional arg or stdin
+    if len(sys.argv) >= 2:
+        json_str = sys.argv[1]
+    elif not sys.stdin.isatty():
+        json_str = sys.stdin.read()
+    else:
         sys.exit(0)
-    result = render_trust_summary(sys.argv[1])
+    result = render_trust_summary(json_str)
     if result:
         print(result)

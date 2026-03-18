@@ -282,10 +282,14 @@ runs:
 
         # --- Trust evaluation summary (advisory, from last pack's trust block) ---
         if [ -n "$INPUT_TRUST_TARGET" ] && [ -n "$TRUST_JSON" ] && command -v python3 >/dev/null 2>&1; then
-          TRUST_SECTION=$(python3 "${ACTION_PATH}/scripts/render-trust-summary.py" "$TRUST_JSON" 2>/dev/null || true)
+          TRUST_RENDER_ERR=$(mktemp)
+          TRUST_SECTION=$(printf '%s' "$TRUST_JSON" | python3 "${ACTION_PATH}/scripts/render-trust-summary.py" 2>"$TRUST_RENDER_ERR" || true)
           if [ -n "$TRUST_SECTION" ]; then
             FULL_SUMMARY="${FULL_SUMMARY}${TRUST_SECTION}\n"
+          elif [ -s "$TRUST_RENDER_ERR" ]; then
+            echo "::warning::Trust summary rendering failed: $(cat "$TRUST_RENDER_ERR")"
           fi
+          rm -f "$TRUST_RENDER_ERR"
         fi
 
         # Write to GitHub step summary
