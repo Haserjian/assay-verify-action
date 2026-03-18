@@ -280,15 +280,24 @@ runs:
           const summary = process.env.VERIFY_SUMMARY || '';
           if (!summary) return;
 
-          // Find existing Assay comment to update
+          // Stable identity marker — never match on visible heading text.
+          // Versioned so future format changes can be migrated cleanly.
+          const MARKER = '<!-- assay-verify-action:sticky-comment:v1 -->';
+
+          const body = MARKER + '\n' + summary
+            + '\n\n---\n*Posted by [assay-verify-action](https://github.com/Haserjian/assay-verify-action)*';
+
+          // Find existing bot comment by marker + author
           const { data: comments } = await github.rest.issues.listComments({
             owner: context.repo.owner,
             repo: context.repo.repo,
             issue_number: context.issue.number,
           });
-          const existing = comments.find(c => c.body.includes('### Assay Verification'));
-
-          const body = summary + '\n\n---\n*Posted by [assay-verify-action](https://github.com/Haserjian/assay-verify-action)*';
+          const botLogins = ['github-actions[bot]', 'github-actions'];
+          const existing = comments.find(
+            c => c.body.includes(MARKER)
+              && botLogins.includes(c.user.login)
+          );
 
           if (existing) {
             await github.rest.issues.updateComment({
@@ -313,3 +322,9 @@ runs:
         name: assay-proof-packs
         path: ${{ inputs.pack-path }}
         if-no-files-found: ignore
+
+    - name: Artifact exposure notice
+      if: always() && inputs.upload-artifact == 'true'
+      shell: bash
+      run: |
+        echo "::notice::Proof Pack artifacts have been uploaded. These are operational outputs for review and debugging. They are NOT receipt-backed trust artifacts unless explicitly designated. Visibility and retention follow GitHub artifact settings, not Assay trust semantics."

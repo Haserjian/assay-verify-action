@@ -1,8 +1,8 @@
 # Assay Verify Action
 
-Verify AI evidence bundles (Proof Packs) in CI. Posts results as a PR comment.
+Verify AI evidence bundles in CI and surface the result directly on pull requests.
 
-A Proof Pack is a signed, tamper-evident folder that proves what an AI system did during a run. This action verifies pack integrity and behavioral claims, then surfaces the verdict where reviewers see it.
+Use this action when your workflow already produces Assay proof packs and you want GitHub to verify them automatically. It checks pack integrity and behavioral claims, then posts the verdict where reviewers see it.
 
 ## What it looks like
 
@@ -22,6 +22,8 @@ On every PR, you get a comment like:
 > Exit code: `0` (`0` = all pass, `1` = claim fail, `2` = integrity fail)
 
 ## Quick start
+
+The action assumes your workflow has already generated one or more proof packs.
 
 ```yaml
 # .github/workflows/assay.yml
@@ -61,6 +63,18 @@ jobs:
 | `upload-artifact` | `true` | Upload pack as a workflow artifact |
 | `assay-version` | latest | Specific `assay-ai` version to install |
 | `python-version` | `3.11` | Python version to use |
+
+## Artifact uploads
+
+When `upload-artifact` is enabled (the default), proof packs are uploaded as
+GitHub workflow artifacts. These are **operational outputs for review and
+debugging** — not receipt-backed trust artifacts.
+
+Artifact visibility and retention follow GitHub's artifact settings, not Assay
+trust semantics. Do not treat artifact presence, naming, or retention as proof
+identity or signed lineage. If you are working in a public repo or a
+mixed-sensitivity environment, consider setting `upload-artifact: false` and
+managing evidence artifacts through a controlled channel instead.
 
 ## Outputs
 
