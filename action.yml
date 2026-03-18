@@ -39,6 +39,10 @@ inputs:
     description: 'Directory containing signers.yaml and acceptance.yaml for trust evaluation'
     required: false
     default: ''
+  enforce-trust:
+    description: 'When true and trust-target is set, fail the step if acceptance is reject (requires clean policy load). Advisory by default.'
+    required: false
+    default: 'false'
   assay-version:
     description: 'assay-ai version to install (default: latest)'
     required: false
@@ -94,6 +98,7 @@ runs:
         INPUT_REQUIRE_PACK: ${{ inputs.require-pack }}
         INPUT_TRUST_TARGET: ${{ inputs.trust-target }}
         INPUT_TRUST_POLICY_DIR: ${{ inputs.trust-policy-dir }}
+        INPUT_ENFORCE_TRUST: ${{ inputs.enforce-trust }}
         ACTION_PATH: ${{ github.action_path }}
       run: |
         set +e
@@ -297,6 +302,19 @@ runs:
           fi
           rm -f "$TRUST_RENDER_ERR"
         fi
+        # --- Trust enforcement gate (opt-in, only on clean reject) ---
+        if [ "$INPUT_ENFORCE_TRUST" = "true" ] && [ -n "$INPUT_TRUST_TARGET" ] && [ -s "$TRUST_RECORDS_FILE" ] && command -v python3 >/dev/null 2>&1; then
+          TRUST_ENFORCE_REASON=$(cat "$TRUST_RECORDS_FILE" | python3 "${ACTION_PATH}/scripts/check-trust-enforcement.py" 2>&1)
+          TRUST_ENFORCE_RC=$?
+          if [ $TRUST_ENFORCE_RC -ne 0 ]; then
+            echo "::error::${TRUST_ENFORCE_REASON}"
+            # Override WORST_EXIT only if trust enforcement triggers
+            if [ $WORST_EXIT -eq 0 ]; then
+              WORST_EXIT=1
+            fi
+          fi
+        fi
+
         rm -f "$TRUST_RECORDS_FILE"
 
         # Write to GitHub step summary
