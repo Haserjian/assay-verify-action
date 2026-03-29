@@ -1,0 +1,41 @@
+# Assay Trust Policy — Acceptance Rules
+#
+# Rules are evaluated top-to-bottom, first match wins.
+# See: https://github.com/Haserjian/assay-verify-action
+#
+# This is the "reviewer" profile: advisory posture.
+# Trust evaluation runs and warns on unregistered signers.
+# Pipeline does not fail unless enforce-trust is set.
+
+rules:
+  # Accept authorized signers
+  - artifact_class: "proof_pack"
+    verification_level: "signature_verified"
+    authorization_status: "authorized"
+    target: "ci_gate"
+    decision: "accept"
+    reason: "Signed by authorized CI signer"
+
+  # Warn on recognized but not-yet-authorized signers
+  - artifact_class: "proof_pack"
+    verification_level: "signature_verified"
+    authorization_status: "recognized"
+    target: "ci_gate"
+    decision: "warn"
+    reason: "Signer recognized but not authorized for ci_gate — check grants in signers.yaml"
+
+  # Warn on unrecognized signers
+  - artifact_class: "*"
+    verification_level: "*"
+    authorization_status: "unrecognized"
+    target: "ci_gate"
+    decision: "warn"
+    reason: "Unknown signer — register fingerprint in trust/signers.yaml"
+
+  # Reject revoked signers
+  - artifact_class: "*"
+    verification_level: "*"
+    authorization_status: "revoked"
+    target: "*"
+    decision: "reject"
+    reason: "Signer has been revoked"

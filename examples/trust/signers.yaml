@@ -1,0 +1,32 @@
+# Assay Trust Policy — Signer Registry
+#
+# This file defines who is allowed to sign proof packs.
+# See: https://github.com/Haserjian/assay-verify-action
+#
+# To register your signer:
+#   1. Run: assay key list
+#   2. Find the SHA-256 fingerprint of your active key
+#   3. Add an entry under signers: below
+#   4. Commit and push
+
+version: 1
+
+signer_classes:
+  ci-org:
+    description: "Organization CI signer"
+    allowed_targets: [ci_gate, publication]
+  local-dev:
+    description: "Developer local key (not sufficient for CI gate)"
+    allowed_targets: [local_verify]
+    not_sufficient_for: [ci_gate, publication]
+
+signers: []
+# To add a signer, replace the empty list above with:
+# signers:
+#   - signer_id: "my-ci-signer"
+#     signer_class: "ci-org"
+#     fingerprint: "replace-with-output-of-assay-key-list"
+#     lifecycle: "active"
+#     grants:
+#       - artifact_class: "proof_pack"
+#         purpose: "*"
