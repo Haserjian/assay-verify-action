@@ -8,6 +8,9 @@ Scenarios:
     match           -- All recorded traces match receipt hashes (exit 0)
     diverge         -- Recorded traces differ from receipts (exit 1)
     tampered        -- Receipt tampered before replay (exit 2)
+    malformed_root  -- Required replay surface removed after pack build (exit 2)
+    environment_drift -- Bound environment field mutated after pack build (exit 2)
+    canonicalization -- JSON formatting/key-order churn only (exit 0)
 
 The output directory is created (or replaced) with a complete RCE episode root
 that assay rce-verify accepts, including a real signed proof pack.
@@ -26,6 +29,14 @@ from assay.proof_pack import ProofPack
 
 
 SIGNER_ID = "self-test-signer"
+SUPPORTED_SCENARIOS = (
+    "match",
+    "diverge",
+    "tampered",
+    "malformed_root",
+    "environment_drift",
+    "canonicalization",
+)
 
 
 def _sha256_prefixed(data: bytes) -> str:
@@ -69,6 +80,10 @@ def _make_receipt(*, receipt_id, receipt_type, seq, payload, parent_hashes,
     }
     receipt["receipt_hash"] = _receipt_hash(receipt)
     return receipt
+
+
+def _write_json(path: Path, payload: dict, *, indent: int | None = None) -> None:
+    path.write_text(json.dumps(payload, indent=indent), encoding="utf-8")
 
 
 def _build_pack(scenario: str, out_dir: Path) -> None:
@@ -190,9 +205,7 @@ def _build_pack(scenario: str, out_dir: Path) -> None:
     ).build(out_dir, keystore=ks)
 
     # Add episode artifacts
-    (pack_dir / "episode_contract.json").write_text(
-        json.dumps(contract, indent=2), encoding="utf-8"
-    )
+    _write_json(pack_dir / "episode_contract.json", contract, indent=2)
     (pack_dir / "inputs").mkdir(exist_ok=True)
     (pack_dir / "inputs" / "input.json").write_bytes(input_bytes)
     traces_dir = pack_dir / "recorded_traces"
@@ -205,13 +218,29 @@ def _build_pack(scenario: str, out_dir: Path) -> None:
         traces["s03"] = alt_output
 
     for step_id, trace in traces.items():
-        (traces_dir / f"{step_id}.json").write_text(json.dumps(trace), encoding="utf-8")
+        trace_path = traces_dir / f"{step_id}.json"
+        if scenario == "canonicalization" and step_id in {"s02", "s03"}:
+            reordered = {"score": trace["score"], "result": trace["result"]}
+            _write_json(trace_path, reordered, indent=2)
+            continue
+        trace_path.write_text(json.dumps(trace), encoding="utf-8")
+
+    if scenario == "environment_drift":
+        contract["environment"]["tool_versions"]["assay"] = "9.9.9"
+        _write_json(pack_dir / "episode_contract.json", contract, indent=2)
+
+    if scenario == "malformed_root":
+        (pack_dir / "episode_contract.json").unlink()
 
     print(f"Built {scenario} pack at {pack_dir}")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3 or sys.argv[1] not in ("match", "diverge", "tampered"):
-        print("Usage: build-rce-test-pack.py <match|diverge|tampered> <output_dir>", file=sys.stderr)
+    if len(sys.argv) != 3 or sys.argv[1] not in SUPPORTED_SCENARIOS:
+        print(
+            "Usage: build-rce-test-pack.py "
+            "<match|diverge|tampered|malformed_root|environment_drift|canonicalization> <output_dir>",
+            file=sys.stderr,
+        )
         sys.exit(1)
     _build_pack(sys.argv[1], Path(sys.argv[2]))
