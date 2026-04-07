@@ -124,6 +124,19 @@ PR E should preserve the existing outputs instead of inventing a parallel replay
 
 No new required outputs are needed for PR E.
 
+Post-PR E follow-up:
+
+The action now also exposes optional machine-readable replay outputs for downstream automation without changing the legacy output contract:
+
+| Output | Meaning |
+|--------|---------|
+| `replay-state` | `not_requested`, `skipped_no_roots`, `zero_roots_required`, `configuration_rejected`, `verifier_unavailable`, or `completed` |
+| `replay-verdict` | Aggregate replay verdict: `MATCH`, `DIVERGE`, `INTEGRITY_FAIL`, or `N/A` |
+| `replay-roots-matched` | Number of replay roots discovered before per-root evaluation |
+| `replay-results-json` | Compact JSON array mirroring the summary table rows (`pack`, `verdict`, `integrity`, `claims`, `steps_replayed`, `replay_basis`) |
+
+This follow-up keeps the existing `integrity`, `claims`, `exit-code`, `pack-count`, and `summary` outputs stable while adding a machine-readable replay surface for policy consumers.
+
 ## Summary And Comment Contract
 
 Replay mode should reuse the current sticky comment mechanism and step-summary flow.

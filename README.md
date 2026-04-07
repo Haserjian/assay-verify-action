@@ -72,6 +72,19 @@ Replay mode is intentionally narrow. It skips only when replay is explicitly opt
 
 Once at least one replay root is found, missing replay surfaces, JSON parse failures, or verifier failures are integrity failures, not skip conditions.
 
+### Machine-readable replay outputs
+
+Replay mode now also emits stable machine-readable outputs so downstream policy or orchestration layers do not have to scrape markdown summaries.
+
+| Output | Meaning |
+|--------|---------|
+| `replay-state` | `not_requested`, `skipped_no_roots`, `zero_roots_required`, `configuration_rejected`, `verifier_unavailable`, or `completed` |
+| `replay-verdict` | Aggregate replay verdict: `MATCH`, `DIVERGE`, `INTEGRITY_FAIL`, or `N/A` |
+| `replay-roots-matched` | Number of directories matched during replay discovery |
+| `replay-results-json` | Compact JSON array of per-root replay rows with `pack`, `verdict`, `integrity`, `claims`, `steps_replayed`, and `replay_basis` |
+
+These outputs are always populated. In normal proof-pack mode the replay surface is explicitly inert: `replay-state=not_requested`, `replay-verdict=N/A`, `replay-roots-matched=0`, and `replay-results-json=[]`.
+
 ## Inputs
 
 | Input | Default | Description |
@@ -153,6 +166,10 @@ managing evidence artifacts through a controlled channel instead.
 | `claims` | `PASS`, `FAIL`, or `N/A` |
 | `exit-code` | `0` (all pass), `1` (claim fail), `2` (integrity fail) |
 | `pack-count` | Number of packs verified |
+| `replay-state` | Machine-readable replay execution state |
+| `replay-verdict` | Aggregate replay verdict or `N/A` |
+| `replay-roots-matched` | Number of replay roots matched during discovery |
+| `replay-results-json` | Compact JSON array of per-root replay results |
 | `summary` | Markdown summary of results |
 
 ## Exit code contract
