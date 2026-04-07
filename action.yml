@@ -610,6 +610,7 @@ runs:
         name: assay-proof-packs
         path: ${{ inputs.pack-path }}
         if-no-files-found: ignore
+        overwrite: true
 
     - name: Artifact exposure notice
       if: always() && inputs.upload-artifact == 'true'
