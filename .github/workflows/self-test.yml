@@ -311,6 +311,64 @@ jobs:
           python -c 'import json, os; rows = json.loads(os.environ["REPLAY_RESULTS_JSON"]); assert len(rows) == 1 and rows[0]["pack"] == "rce-test-match" and rows[0]["verdict"] == "MATCH", f"Unexpected replay-results-json payload: {rows}"'
           echo "RCE replay MATCH test passed."
 
+  test-rce-replay-canonicalization-match:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Assay and build canonicalization pack
+        run: |
+          pip install assay-ai
+          python scripts/build-rce-test-pack.py canonicalization rce-test-canonicalization
+
+      - name: Verify canonicalization replay root
+        id: verify
+        uses: ./
+        with:
+          pack-path: 'rce-test-canonicalization/'
+          verification-mode: 'rce_replay'
+          comment-on-pr: 'false'
+          upload-artifact: 'false'
+
+      - name: Assert canonicalization remains MATCH
+        shell: bash
+        env:
+          VERIFY_SUMMARY: ${{ steps.verify.outputs.summary }}
+          REPLAY_RESULTS_JSON: ${{ steps.verify.outputs.replay-results-json }}
+        run: |
+          EXIT="${{ steps.verify.outputs.exit-code }}"
+          INTEGRITY="${{ steps.verify.outputs.integrity }}"
+          CLAIMS="${{ steps.verify.outputs.claims }}"
+          OUTCOME="${{ steps.verify.outcome }}"
+          REPLAY_STATE="${{ steps.verify.outputs.replay-state }}"
+          REPLAY_VERDICT="${{ steps.verify.outputs.replay-verdict }}"
+          REPLAY_ROOTS="${{ steps.verify.outputs.replay-roots-matched }}"
+          echo "outcome=$OUTCOME exit-code=$EXIT integrity=$INTEGRITY claims=$CLAIMS replay-state=$REPLAY_STATE replay-verdict=$REPLAY_VERDICT replay-roots=$REPLAY_ROOTS"
+          if [ "$OUTCOME" != "success" ]; then
+            echo "::error::Expected canonicalization case to succeed but outcome was: $OUTCOME"
+            exit 1
+          fi
+          if [ "$EXIT" != "0" ] || [ "$INTEGRITY" != "PASS" ] || [ "$CLAIMS" != "PASS" ]; then
+            echo "::error::Expected canonicalization case to remain PASS/PASS with exit 0"
+            exit 1
+          fi
+          if [ "$REPLAY_STATE" != "completed" ] || [ "$REPLAY_VERDICT" != "MATCH" ] || [ "$REPLAY_ROOTS" != "1" ]; then
+            echo "::error::Expected canonicalization replay outputs to be completed/MATCH/1"
+            exit 1
+          fi
+          if [[ "$VERIFY_SUMMARY" != *"MATCH"* ]]; then
+            echo "::error::Expected MATCH in canonicalization summary"
+            echo "$VERIFY_SUMMARY"
+            exit 1
+          fi
+          python -c 'import json, os; rows = json.loads(os.environ["REPLAY_RESULTS_JSON"]); assert len(rows) == 1 and rows[0]["pack"] == "rce-test-canonicalization" and rows[0]["verdict"] == "MATCH", f"Unexpected replay-results-json payload: {rows}"'
+          echo "RCE replay canonicalization test passed."
+
   test-rce-replay-diverge:
     runs-on: ubuntu-latest
     steps:
@@ -383,7 +441,7 @@ jobs:
             echo "$VERIFY_SUMMARY"
             exit 1
           fi
-            python -c 'import json, os; rows = json.loads(os.environ["REPLAY_RESULTS_JSON"]); assert len(rows) == 1 and rows[0]["pack"] == "rce-test-diverge" and rows[0]["verdict"] == "DIVERGE", f"Unexpected replay-results-json payload: {rows}"'
+          python -c 'import json, os; rows = json.loads(os.environ["REPLAY_RESULTS_JSON"]); assert len(rows) == 1 and rows[0]["pack"] == "rce-test-diverge" and rows[0]["verdict"] == "DIVERGE", f"Unexpected replay-results-json payload: {rows}"'
           echo "RCE replay DIVERGE test passed."
 
   test-rce-replay-integrity-fail:
@@ -458,8 +516,126 @@ jobs:
             echo "$VERIFY_SUMMARY"
             exit 1
           fi
-            python -c 'import json, os; rows = json.loads(os.environ["REPLAY_RESULTS_JSON"]); assert len(rows) == 1 and rows[0]["pack"] == "rce-test-tampered" and rows[0]["verdict"] == "INTEGRITY_FAIL", f"Unexpected replay-results-json payload: {rows}"'
+          python -c 'import json, os; rows = json.loads(os.environ["REPLAY_RESULTS_JSON"]); assert len(rows) == 1 and rows[0]["pack"] == "rce-test-tampered" and rows[0]["verdict"] == "INTEGRITY_FAIL", f"Unexpected replay-results-json payload: {rows}"'
           echo "RCE replay INTEGRITY_FAIL test passed."
+
+  test-rce-replay-environment-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Assay and build environment drift pack
+        run: |
+          pip install assay-ai
+          python scripts/build-rce-test-pack.py environment_drift rce-test-env-drift
+
+      - name: Verify environment drift replay root (expect failure)
+        id: verify
+        continue-on-error: true
+        uses: ./
+        with:
+          pack-path: 'rce-test-env-drift/'
+          verification-mode: 'rce_replay'
+          comment-on-pr: 'false'
+          upload-artifact: 'false'
+
+      - name: Assert environment drift is INTEGRITY_FAIL
+        shell: bash
+        env:
+          VERIFY_SUMMARY: ${{ steps.verify.outputs.summary }}
+          REPLAY_RESULTS_JSON: ${{ steps.verify.outputs.replay-results-json }}
+        run: |
+          EXIT="${{ steps.verify.outputs.exit-code }}"
+          INTEGRITY="${{ steps.verify.outputs.integrity }}"
+          CLAIMS="${{ steps.verify.outputs.claims }}"
+          OUTCOME="${{ steps.verify.outcome }}"
+          REPLAY_STATE="${{ steps.verify.outputs.replay-state }}"
+          REPLAY_VERDICT="${{ steps.verify.outputs.replay-verdict }}"
+          REPLAY_ROOTS="${{ steps.verify.outputs.replay-roots-matched }}"
+          echo "outcome=$OUTCOME exit-code=$EXIT integrity=$INTEGRITY claims=$CLAIMS replay-state=$REPLAY_STATE replay-verdict=$REPLAY_VERDICT replay-roots=$REPLAY_ROOTS"
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "::error::Expected environment drift to fail but outcome was: $OUTCOME"
+            exit 1
+          fi
+          if [ "$EXIT" != "2" ] || [ "$INTEGRITY" != "FAIL" ] || [ "$CLAIMS" != "N/A" ]; then
+            echo "::error::Expected environment drift to yield exit 2 / integrity FAIL / claims N/A"
+            exit 1
+          fi
+          if [ "$REPLAY_STATE" != "completed" ] || [ "$REPLAY_VERDICT" != "INTEGRITY_FAIL" ] || [ "$REPLAY_ROOTS" != "1" ]; then
+            echo "::error::Expected environment drift replay outputs to be completed/INTEGRITY_FAIL/1"
+            exit 1
+          fi
+          if [[ "$VERIFY_SUMMARY" != *"INTEGRITY FAIL"* ]]; then
+            echo "::error::Expected INTEGRITY FAIL in environment drift summary"
+            echo "$VERIFY_SUMMARY"
+            exit 1
+          fi
+          python -c 'import json, os; rows = json.loads(os.environ["REPLAY_RESULTS_JSON"]); assert len(rows) == 1 and rows[0]["pack"] == "rce-test-env-drift" and rows[0]["verdict"] == "INTEGRITY_FAIL", f"Unexpected replay-results-json payload: {rows}"'
+          echo "RCE replay environment drift test passed."
+
+  test-rce-replay-malformed-root:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Assay and build malformed replay root
+        run: |
+          pip install assay-ai
+          python scripts/build-rce-test-pack.py malformed_root rce-test-malformed-root
+
+      - name: Verify malformed replay root (expect failure)
+        id: verify
+        continue-on-error: true
+        uses: ./
+        with:
+          pack-path: 'rce-test-malformed-root/'
+          verification-mode: 'rce_replay'
+          comment-on-pr: 'false'
+          upload-artifact: 'false'
+
+      - name: Assert malformed root is INTEGRITY_FAIL
+        shell: bash
+        env:
+          VERIFY_SUMMARY: ${{ steps.verify.outputs.summary }}
+          REPLAY_RESULTS_JSON: ${{ steps.verify.outputs.replay-results-json }}
+        run: |
+          EXIT="${{ steps.verify.outputs.exit-code }}"
+          INTEGRITY="${{ steps.verify.outputs.integrity }}"
+          CLAIMS="${{ steps.verify.outputs.claims }}"
+          OUTCOME="${{ steps.verify.outcome }}"
+          REPLAY_STATE="${{ steps.verify.outputs.replay-state }}"
+          REPLAY_VERDICT="${{ steps.verify.outputs.replay-verdict }}"
+          REPLAY_ROOTS="${{ steps.verify.outputs.replay-roots-matched }}"
+          echo "outcome=$OUTCOME exit-code=$EXIT integrity=$INTEGRITY claims=$CLAIMS replay-state=$REPLAY_STATE replay-verdict=$REPLAY_VERDICT replay-roots=$REPLAY_ROOTS"
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "::error::Expected malformed replay root to fail but outcome was: $OUTCOME"
+            exit 1
+          fi
+          if [ "$EXIT" != "2" ] || [ "$INTEGRITY" != "FAIL" ] || [ "$CLAIMS" != "N/A" ]; then
+            echo "::error::Expected malformed replay root to yield exit 2 / integrity FAIL / claims N/A"
+            exit 1
+          fi
+          if [ "$REPLAY_STATE" != "completed" ] || [ "$REPLAY_VERDICT" != "INTEGRITY_FAIL" ] || [ "$REPLAY_ROOTS" != "1" ]; then
+            echo "::error::Expected malformed replay outputs to be completed/INTEGRITY_FAIL/1"
+            exit 1
+          fi
+          if [[ "$VERIFY_SUMMARY" != *"INTEGRITY FAIL"* ]]; then
+            echo "::error::Expected INTEGRITY FAIL in malformed root summary"
+            echo "$VERIFY_SUMMARY"
+            exit 1
+          fi
+          python -c 'import json, os; rows = json.loads(os.environ["REPLAY_RESULTS_JSON"]); assert len(rows) == 1 and rows[0]["pack"] == "rce-test-malformed-root" and rows[0]["verdict"] == "INTEGRITY_FAIL", f"Unexpected replay-results-json payload: {rows}"'
+          echo "RCE replay malformed root test passed."
 
   test-rce-rejected-inputs:
     runs-on: ubuntu-latest

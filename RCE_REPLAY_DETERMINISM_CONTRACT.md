@@ -45,7 +45,7 @@ It is a contract-definition artifact first. Implementation should follow the con
 Every replay root must contain these paths:
 
 | Path | Role | Contract status |
-|------|------|-----------------|
+| ------ | ------ | ----------------- |
 | `pack_manifest.json` | proof-pack manifest / attestation surface | required |
 | `receipt_pack.jsonl` | canonical receipt lineage surface | required |
 | `episode_contract.json` | replay objective, script, policy, and environment contract | required |
@@ -66,7 +66,7 @@ Missing required paths are not drift. They are `INTEGRITY_FAIL`.
 The current repo evidence already binds these surfaces:
 
 | Surface | Current evidence | Stability class | Contract |
-|---------|------------------|-----------------|----------|
+| --------- | ------------------ | ----------------- | ---------- |
 | `receipt_pack.jsonl` | replay builder emits chained receipts with canonical receipt hashes | byte-stable transport, semantically stable receipt payloads | receipt order, lineage, and receipt content must remain trustworthy; corruption or truncation is `INTEGRITY_FAIL` |
 | `pack_manifest.json` | proof-pack build output | byte-stable | manifest mutation after pack creation is `INTEGRITY_FAIL` |
 | `episode_contract.json` | builder derives `episode_spec_hash` from `inputs`, `replay_script`, `replay_policy`, and environment subset | semantically stable for canonical JSON content | whitespace or key-order churn alone must not create `DIVERGE`; changed semantic content is a different replay root |
@@ -184,12 +184,12 @@ Use this ladder in order:
 Issue #7 should land a fixture matrix before wider replay claims are made.
 
 | Fixture family | Current repo status | Expected verdict | What it proves |
-|----------------|---------------------|------------------|----------------|
+| ---------------- | --------------------- | ------------------ | ---------------- |
 | clean match | present (`build-rce-test-pack.py match`) | `MATCH` | baseline replay equivalence |
 | expected divergence | present (`build-rce-test-pack.py diverge`) | `DIVERGE` | honest behavioral drift with intact integrity |
-| malformed replay root | missing | `INTEGRITY_FAIL` | required-surface failures are not treated as drift |
-| environment drift | missing | `INTEGRITY_FAIL` unless explicitly admitted | undeclared or out-of-bound environment differences fail closed |
-| canonicalization edge case | missing | `MATCH` | semantic JSON equivalence survives formatting or key-order churn |
+| malformed replay root | present (`build-rce-test-pack.py malformed_root`) | `INTEGRITY_FAIL` | required-surface failures are not treated as drift |
+| environment drift | present (`build-rce-test-pack.py environment_drift`) | `INTEGRITY_FAIL` unless explicitly admitted | undeclared or out-of-bound environment differences fail closed |
+| canonicalization edge case | present (`build-rce-test-pack.py canonicalization`) | `MATCH` | semantic JSON equivalence survives formatting or key-order churn |
 
 ### 4.1 Required fixture behaviors
 
@@ -201,13 +201,13 @@ Issue #7 should land a fixture matrix before wider replay claims are made.
 
 Do not widen replay claims, hybrid routing, or policy dependence until this fixture matrix exists and passes in CI.
 
-## 5. Implementation Gate For Issue #7
+## 5. Completion Gate For Issue #7
 
 Issue #7 is complete only when all of the following are true:
 
 - this determinism contract is adopted as the governing note for replay verdict interpretation
-- the missing fixture families are implemented
+- the fixture matrix is implemented in the replay builder
 - CI proves the contract on the fixture matrix
 - README and replay action docs link to this note as the determinism authority
 
-Until then, replay mode is functional and legible, but its determinism boundary remains only partially proven.
+With the contract note, fixture families, and CI coverage in place, issue #7 can be closed once the merged branch preserves this matrix without regression.
