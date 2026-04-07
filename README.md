@@ -59,6 +59,19 @@ The contract for replay mode lives in [RCE_REPLAY_ACTION_CONTRACT.md](./RCE_REPL
 
 Replay mode still keeps the proof-pack path as the default. Use `verification-mode: rce_replay` only for replayable episode roots that already contain the layout expected by `assay rce-verify`.
 
+### Replay mode outcome guide
+
+Replay mode is intentionally narrow. It skips only when replay is explicitly optional and no replay roots are present; otherwise it fails closed.
+
+| Replay roots matched | `require-pack` | `assay rce-verify` available | Outcome | Exit code | Notes |
+|----------------------|----------------|------------------------------|---------|-----------|-------|
+| no | `false` | not checked | success | `0` | Summary is `SKIPPED`. Replay mode does not require verifier availability when there is nothing to verify. |
+| no | `true` | not checked | failure | `2` | No replay roots matched the configured `pack-path`. |
+| yes | any | no | failure | `2` | Fail closed: replay was requested and roots exist, but verifier capability is missing. |
+| yes | any | yes | success or failure | `0`, `1`, or `2` | Replay proceeds and maps `MATCH`, `DIVERGE`, and `INTEGRITY_FAIL` onto the normal action exit semantics. |
+
+Once at least one replay root is found, missing replay surfaces, JSON parse failures, or verifier failures are integrity failures, not skip conditions.
+
 ## Inputs
 
 | Input | Default | Description |
