@@ -139,10 +139,16 @@ runs:
             GUARD_ERRORS=1
           fi
           if [ $GUARD_ERRORS -ne 0 ]; then
+            _GUARD_SUMMARY="### Assay Verification\n\n**Mode: RCE replay (\`recorded_trace\`, Tier A)**\n\n**Result: INTEGRITY FAIL** -- configuration rejected for rce_replay mode\n"
             echo "integrity=FAIL" >> "$GITHUB_OUTPUT"
             echo "claims=N/A" >> "$GITHUB_OUTPUT"
             echo "exit_code=2" >> "$GITHUB_OUTPUT"
             echo "pack_count=0" >> "$GITHUB_OUTPUT"
+            echo -e "$_GUARD_SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+            EOF_MARKER="ASSAY_SUMMARY_EOF_$(date +%s)"
+            echo "summary<<${EOF_MARKER}" >> "$GITHUB_OUTPUT"
+            echo -e "$_GUARD_SUMMARY" >> "$GITHUB_OUTPUT"
+            echo "${EOF_MARKER}" >> "$GITHUB_OUTPUT"
             exit 2
           fi
 
@@ -213,9 +219,6 @@ runs:
           PACK_COUNT=0
           WORST_EXIT=0
           REPLAY_SUMMARY=""
-          INTEGRITY_ALL="PASS"
-          CLAIMS_ALL="PASS"
-
           for PACK_DIR in "${REPLAY_ROOTS[@]}"; do
             PACK_COUNT=$((PACK_COUNT + 1))
             PACK_NAME=$(basename "$PACK_DIR")
@@ -231,7 +234,6 @@ runs:
 
             if [ $LAYOUT_OK -eq 0 ]; then
               WORST_EXIT=2
-              INTEGRITY_ALL="FAIL"
               REPLAY_SUMMARY="${REPLAY_SUMMARY}| \`${PACK_NAME}\` | INTEGRITY_FAIL | FAIL | N/A | — | recorded_trace |\n"
               continue
             fi
@@ -247,7 +249,6 @@ runs:
             if [ "$VERDICT" = "PARSE_ERROR" ] || [ -z "$VERDICT" ] || [ "$RCE_EXIT" -eq 3 ]; then
               echo "::error::Failed to parse assay rce-verify JSON output for $PACK_NAME (CLI exit $RCE_EXIT). Treating as INTEGRITY_FAIL."
               WORST_EXIT=2
-              INTEGRITY_ALL="FAIL"
               REPLAY_SUMMARY="${REPLAY_SUMMARY}| \`${PACK_NAME}\` | INTEGRITY_FAIL | FAIL | N/A | — | recorded_trace |\n"
               echo "::group::[INTEGRITY_FAIL] $PACK_NAME"
               echo "$RAW_JSON"
@@ -260,15 +261,13 @@ runs:
               MATCH)
                 PACK_INTEGRITY="PASS"; PACK_CLAIMS="PASS"; PACK_EXIT=0 ;;
               DIVERGE)
-                PACK_INTEGRITY="PASS"; PACK_CLAIMS="FAIL"; PACK_EXIT=1
-                if [ "$CLAIMS_ALL" != "FAIL" ]; then CLAIMS_ALL="FAIL"; fi ;;
+                PACK_INTEGRITY="PASS"; PACK_CLAIMS="FAIL"; PACK_EXIT=1 ;;
               INTEGRITY_FAIL)
-                PACK_INTEGRITY="FAIL"; PACK_CLAIMS="N/A"; PACK_EXIT=2
-                INTEGRITY_ALL="FAIL" ;;
+                PACK_INTEGRITY="FAIL"; PACK_CLAIMS="N/A"; PACK_EXIT=2 ;;
               *)
                 echo "::error::Unknown RCE verdict '$VERDICT' for $PACK_NAME. Treating as INTEGRITY_FAIL."
                 PACK_INTEGRITY="FAIL"; PACK_CLAIMS="N/A"; PACK_EXIT=2
-                INTEGRITY_ALL="FAIL" ;;
+                ;;
             esac
 
             if [ "$PACK_EXIT" -gt "$WORST_EXIT" ]; then WORST_EXIT=$PACK_EXIT; fi
@@ -286,6 +285,21 @@ runs:
             echo "$RAW_JSON"
             echo "::endgroup::"
           done
+
+          case "$WORST_EXIT" in
+            0)
+              INTEGRITY_ALL="PASS"
+              CLAIMS_ALL="PASS"
+              ;;
+            1)
+              INTEGRITY_ALL="PASS"
+              CLAIMS_ALL="FAIL"
+              ;;
+            *)
+              INTEGRITY_ALL="FAIL"
+              CLAIMS_ALL="N/A"
+              ;;
+          esac
 
           # 5. Write outputs and summary
           echo "integrity=$INTEGRITY_ALL" >> "$GITHUB_OUTPUT"

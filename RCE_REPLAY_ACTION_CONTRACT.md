@@ -1,6 +1,6 @@
 # RCE Replay Action Contract
 
-Status: design gate for PR E. This is not implemented in assay-verify-action today.
+Status: design gate for PR E. This branch implements the contract in assay-verify-action.
 
 This note defines the user-facing contract for adding Replay-Constrained Episode (RCE) verification to this action without widening scope beyond the current recorded-trace verifier in Haserjian/assay PR B and the gallery scenarios in Haserjian/assay-proof-gallery PR C.
 

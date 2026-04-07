@@ -364,8 +364,9 @@ jobs:
         run: |
           EXIT="${{ steps.verify.outputs.exit-code }}"
           INTEGRITY="${{ steps.verify.outputs.integrity }}"
+          CLAIMS="${{ steps.verify.outputs.claims }}"
           OUTCOME="${{ steps.verify.outcome }}"
-          echo "outcome=$OUTCOME exit-code=$EXIT integrity=$INTEGRITY"
+          echo "outcome=$OUTCOME exit-code=$EXIT integrity=$INTEGRITY claims=$CLAIMS"
           if [ "$OUTCOME" != "failure" ]; then
             echo "::error::Expected failure but outcome was: $OUTCOME"
             exit 1
@@ -376,6 +377,10 @@ jobs:
           fi
           if [ "$INTEGRITY" != "FAIL" ]; then
             echo "::error::Expected integrity=FAIL but got: $INTEGRITY"
+            exit 1
+          fi
+          if [ "$CLAIMS" != "N/A" ]; then
+            echo "::error::Expected claims=N/A but got: $CLAIMS"
             exit 1
           fi
           if [[ "$VERIFY_SUMMARY" != *"INTEGRITY FAIL"* ]]; then
@@ -411,16 +416,28 @@ jobs:
 
       - name: Assert config error triggers failure
         shell: bash
+        env:
+          VERIFY_SUMMARY: ${{ steps.verify.outputs.summary }}
         run: |
           OUTCOME="${{ steps.verify.outcome }}"
           EXIT="${{ steps.verify.outputs.exit-code }}"
-          echo "outcome=$OUTCOME exit-code=$EXIT"
+          CLAIMS="${{ steps.verify.outputs.claims }}"
+          echo "outcome=$OUTCOME exit-code=$EXIT claims=$CLAIMS"
           if [ "$OUTCOME" != "failure" ]; then
             echo "::error::Expected failure for rejected input but outcome was: $OUTCOME"
             exit 1
           fi
           if [ "$EXIT" != "2" ]; then
             echo "::error::Expected exit-code=2 for config error but got: $EXIT"
+            exit 1
+          fi
+          if [ "$CLAIMS" != "N/A" ]; then
+            echo "::error::Expected claims=N/A for config error but got: $CLAIMS"
+            exit 1
+          fi
+          if [[ "$VERIFY_SUMMARY" != *"configuration rejected for rce_replay mode"* ]]; then
+            echo "::error::Expected config-rejection summary"
+            echo "$VERIFY_SUMMARY"
             exit 1
           fi
           echo "RCE rejected-inputs test passed."
@@ -464,16 +481,28 @@ jobs:
 
       - name: Assert fail-closed on unavailable verifier
         shell: bash
+        env:
+          VERIFY_SUMMARY: ${{ steps.verify.outputs.summary }}
         run: |
           OUTCOME="${{ steps.verify.outcome }}"
           EXIT="${{ steps.verify.outputs.exit-code }}"
-          echo "outcome=$OUTCOME exit-code=$EXIT"
+          CLAIMS="${{ steps.verify.outputs.claims }}"
+          echo "outcome=$OUTCOME exit-code=$EXIT claims=$CLAIMS"
           if [ "$OUTCOME" != "failure" ]; then
             echo "::error::Expected fail-closed when rce-verify unavailable but outcome was: $OUTCOME"
             exit 1
           fi
           if [ "$EXIT" != "2" ]; then
             echo "::error::Expected exit-code=2 for unavailable verifier but got: $EXIT"
+            exit 1
+          fi
+          if [ "$CLAIMS" != "N/A" ]; then
+            echo "::error::Expected claims=N/A for unavailable verifier but got: $CLAIMS"
+            exit 1
+          fi
+          if [[ "$VERIFY_SUMMARY" != *"rce-verify is not available"* ]]; then
+            echo "::error::Expected unavailable-verifier summary"
+            echo "$VERIFY_SUMMARY"
             exit 1
           fi
           echo "RCE verifier-unavailable fail-closed test passed."
