@@ -152,23 +152,8 @@ runs:
           local _INTEGRITY="$4"
           local _CLAIMS="$5"
           local _STEPS_REPLAYED="$6"
-          python3 - "$_CURRENT_JSON" "$_PACK_NAME" "$_VERDICT" "$_INTEGRITY" "$_CLAIMS" "$_STEPS_REPLAYED" <<'PY'
-            import json
-            import sys
-
-            results = json.loads(sys.argv[1])
-            results.append(
-              {
-                "pack": sys.argv[2],
-                "verdict": sys.argv[3],
-                "integrity": sys.argv[4],
-                "claims": sys.argv[5],
-                "steps_replayed": sys.argv[6],
-                "replay_basis": "recorded_trace",
-              }
-            )
-            print(json.dumps(results, separators=(",", ":")))
-            PY
+          python3 -c 'import json, sys; results = json.loads(sys.argv[1]); results.append({"pack": sys.argv[2], "verdict": sys.argv[3], "integrity": sys.argv[4], "claims": sys.argv[5], "steps_replayed": sys.argv[6], "replay_basis": "recorded_trace"}); print(json.dumps(results, separators=(",", ":")))' \
+            "$_CURRENT_JSON" "$_PACK_NAME" "$_VERDICT" "$_INTEGRITY" "$_CLAIMS" "$_STEPS_REPLAYED" 2>/dev/null
             if [ $? -ne 0 ]; then
               echo "$_CURRENT_JSON"
             fi
