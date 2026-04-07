@@ -452,21 +452,25 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Assay with patched rce-verify stub
+      - name: Install Assay and build rce-verify stub
         run: |
           pip install assay-ai
-          # Temporarily shadow assay with a wrapper that fails rce-verify
-          mkdir -p "$HOME/.local/rce-stub-bin"
+          # Shadow assay with a wrapper that fails rce-verify to prove fail-closed.
+          # Use printf to embed the resolved real-assay path at write time so the
+          # fallback exec is not a broken reference inside a single-quoted heredoc.
           REAL_ASSAY=$(which assay)
-          cat > "$HOME/.local/rce-stub-bin/assay" << 'STUBEOF'
-          #!/usr/bin/env bash
-          if [ "$1" = "rce-verify" ]; then
-            echo "No such command 'rce-verify'" >&2
-            exit 127
-          fi
-          exec "$REAL_ASSAY" "$@"
-          STUBEOF
+          mkdir -p "$HOME/.local/rce-stub-bin"
+          {
+            printf '%s\n' '#!/usr/bin/env bash'
+            printf '%s\n' 'if [ "$1" = "rce-verify" ]; then'
+            printf '%s\n' '  echo "rce-verify is not available in this stub" >&2'
+            printf '%s\n' '  exit 127'
+            printf '%s\n' 'fi'
+            printf 'exec "%s" "$@"\n' "$REAL_ASSAY"
+          } > "$HOME/.local/rce-stub-bin/assay"
           chmod +x "$HOME/.local/rce-stub-bin/assay"
+          # Verify the resolved path is embedded correctly before we continue
+          grep -q "$REAL_ASSAY" "$HOME/.local/rce-stub-bin/assay"
           echo "$HOME/.local/rce-stub-bin" >> "$GITHUB_PATH"
 
       - name: Verify in rce_replay mode (expect fail-closed)
