@@ -308,17 +308,7 @@ jobs:
             echo "$VERIFY_SUMMARY"
             exit 1
           fi
-          python - <<'PY'
-          import json
-          import os
-
-            try:
-              rows = json.loads(os.environ["REPLAY_RESULTS_JSON"])
-            except json.JSONDecodeError as exc:
-              raise SystemExit(f"Invalid replay-results-json payload: {exc}")
-          if len(rows) != 1 or rows[0]["pack"] != "rce-test-match" or rows[0]["verdict"] != "MATCH":
-              raise SystemExit(f"Unexpected replay-results-json payload: {rows}")
-          PY
+          python -c 'import json, os; rows = json.loads(os.environ["REPLAY_RESULTS_JSON"]); assert len(rows) == 1 and rows[0]["pack"] == "rce-test-match" and rows[0]["verdict"] == "MATCH", f"Unexpected replay-results-json payload: {rows}"'
           echo "RCE replay MATCH test passed."
 
   test-rce-replay-diverge:
@@ -393,17 +383,7 @@ jobs:
             echo "$VERIFY_SUMMARY"
             exit 1
           fi
-          python - <<'PY'
-          import json
-          import os
-
-            try:
-              rows = json.loads(os.environ["REPLAY_RESULTS_JSON"])
-            except json.JSONDecodeError as exc:
-              raise SystemExit(f"Invalid replay-results-json payload: {exc}")
-          if len(rows) != 1 or rows[0]["pack"] != "rce-test-diverge" or rows[0]["verdict"] != "DIVERGE":
-              raise SystemExit(f"Unexpected replay-results-json payload: {rows}")
-          PY
+            python -c 'import json, os; rows = json.loads(os.environ["REPLAY_RESULTS_JSON"]); assert len(rows) == 1 and rows[0]["pack"] == "rce-test-diverge" and rows[0]["verdict"] == "DIVERGE", f"Unexpected replay-results-json payload: {rows}"'
           echo "RCE replay DIVERGE test passed."
 
   test-rce-replay-integrity-fail:
@@ -478,17 +458,7 @@ jobs:
             echo "$VERIFY_SUMMARY"
             exit 1
           fi
-          python - <<'PY'
-          import json
-          import os
-
-            try:
-              rows = json.loads(os.environ["REPLAY_RESULTS_JSON"])
-            except json.JSONDecodeError as exc:
-              raise SystemExit(f"Invalid replay-results-json payload: {exc}")
-          if len(rows) != 1 or rows[0]["pack"] != "rce-test-tampered" or rows[0]["verdict"] != "INTEGRITY_FAIL":
-              raise SystemExit(f"Unexpected replay-results-json payload: {rows}")
-          PY
+            python -c 'import json, os; rows = json.loads(os.environ["REPLAY_RESULTS_JSON"]); assert len(rows) == 1 and rows[0]["pack"] == "rce-test-tampered" and rows[0]["verdict"] == "INTEGRITY_FAIL", f"Unexpected replay-results-json payload: {rows}"'
           echo "RCE replay INTEGRITY_FAIL test passed."
 
   test-rce-rejected-inputs:
