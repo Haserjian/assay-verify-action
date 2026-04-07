@@ -51,19 +51,21 @@ jobs:
           require-claim-pass: 'true'
 ```
 
-## Planned RCE Replay Mode
+## RCE Replay Mode
 
-RCE replay verification is not implemented in this action yet.
+RCE replay verification is available through `verification-mode: rce_replay`.
 
-The gate document for that work lives in [RCE_REPLAY_ACTION_CONTRACT.md](./RCE_REPLAY_ACTION_CONTRACT.md). It defines the planned replay-mode inputs, artifact layout expectations, verdict mapping, summary behavior, and explicit non-goals for PR E.
+The contract for replay mode lives in [RCE_REPLAY_ACTION_CONTRACT.md](./RCE_REPLAY_ACTION_CONTRACT.md). It defines the replay-mode inputs, artifact layout expectations, verdict mapping, summary behavior, and explicit non-goals for PR E.
 
-Until that lands, run `assay rce-verify` directly in your workflow after generating replayable episode packs.
+Replay mode still keeps the proof-pack path as the default. Use `verification-mode: rce_replay` only for replayable episode roots that already contain the layout expected by `assay rce-verify`.
 
 ## Inputs
 
 | Input | Default | Description |
 |-------|---------|-------------|
 | `pack-path` | `proof_pack_*/` | Path to Proof Pack directory (glob supported) |
+| `verification-mode` | `proof_pack` | Select `proof_pack` or `rce_replay` |
+| `replay-output-dir` | `replay_results` | Relative directory created inside each replay root for replay sidecars |
 | `require-pack` | `true` | Fail if PR has file changes but no Proof Pack (set `false` for docs-only repos) |
 | `require-claim-pass` | `true` | Fail if any claim check is not PASS |
 | `lock-file` | | Path to `assay.lock` for pinned verification semantics |

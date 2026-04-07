@@ -51,6 +51,14 @@ inputs:
     description: 'Python version to use'
     required: false
     default: '3.11'
+  verification-mode:
+    description: 'Verification mode: proof_pack (default) or rce_replay'
+    required: false
+    default: 'proof_pack'
+  replay-output-dir:
+    description: 'Subdirectory for replay results written inside each matched replay root'
+    required: false
+    default: 'replay_results'
 
 outputs:
   integrity:
@@ -99,9 +107,231 @@ runs:
         INPUT_TRUST_TARGET: ${{ inputs.trust-target }}
         INPUT_TRUST_POLICY_DIR: ${{ inputs.trust-policy-dir }}
         INPUT_ENFORCE_TRUST: ${{ inputs.enforce-trust }}
+        INPUT_VERIFICATION_MODE: ${{ inputs.verification-mode }}
+        INPUT_REPLAY_OUTPUT_DIR: ${{ inputs.replay-output-dir }}
         ACTION_PATH: ${{ github.action_path }}
       run: |
         set +e
+
+        # ── RCE REPLAY MODE ─────────────────────────────────────────────────────
+        if [ "$INPUT_VERIFICATION_MODE" = "rce_replay" ]; then
+
+          # 1. Reject unsupported inputs
+          GUARD_ERRORS=0
+          if [ "$INPUT_REQUIRE_CLAIM_PASS" = "false" ]; then
+            echo "::error::Configuration error: require-claim-pass: false is not allowed in rce_replay mode. assay rce-verify encodes DIVERGE as exit 1 — disabling this creates a silent-pass path for honest divergence."
+            GUARD_ERRORS=1
+          fi
+          if [ -n "$INPUT_LOCK_FILE" ]; then
+            echo "::error::Configuration error: lock-file is not supported in rce_replay mode v1."
+            GUARD_ERRORS=1
+          fi
+          if [ -n "$INPUT_TRUST_TARGET" ]; then
+            echo "::error::Configuration error: trust-target is not supported in rce_replay mode v1."
+            GUARD_ERRORS=1
+          fi
+          if [ -n "$INPUT_TRUST_POLICY_DIR" ]; then
+            echo "::error::Configuration error: trust-policy-dir is not supported in rce_replay mode v1."
+            GUARD_ERRORS=1
+          fi
+          if [ "$INPUT_ENFORCE_TRUST" = "true" ]; then
+            echo "::error::Configuration error: enforce-trust is not supported in rce_replay mode v1."
+            GUARD_ERRORS=1
+          fi
+          if [ $GUARD_ERRORS -ne 0 ]; then
+            _GUARD_SUMMARY="### Assay Verification\n\n**Mode: RCE replay (\`recorded_trace\`, Tier A)**\n\n**Result: INTEGRITY FAIL** -- configuration rejected for rce_replay mode\n"
+            echo "integrity=FAIL" >> "$GITHUB_OUTPUT"
+            echo "claims=N/A" >> "$GITHUB_OUTPUT"
+            echo "exit_code=2" >> "$GITHUB_OUTPUT"
+            echo "pack_count=0" >> "$GITHUB_OUTPUT"
+            echo -e "$_GUARD_SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+            EOF_MARKER="ASSAY_SUMMARY_EOF_$(date +%s)"
+            echo "summary<<${EOF_MARKER}" >> "$GITHUB_OUTPUT"
+            echo -e "$_GUARD_SUMMARY" >> "$GITHUB_OUTPUT"
+            echo "${EOF_MARKER}" >> "$GITHUB_OUTPUT"
+            exit 2
+          fi
+
+          # 2. Probe for assay rce-verify
+          if ! assay rce-verify --help >/dev/null 2>&1; then
+            echo "::error::assay rce-verify is not available in the installed assay-ai version. Replay mode requires an assay-ai release that includes rce-verify. Fail closed."
+            echo "integrity=FAIL" >> "$GITHUB_OUTPUT"
+            echo "claims=N/A" >> "$GITHUB_OUTPUT"
+            echo "exit_code=2" >> "$GITHUB_OUTPUT"
+            echo "pack_count=0" >> "$GITHUB_OUTPUT"
+            _PROBE_SUMMARY="### Assay Verification\n\n**Mode: RCE replay (\`recorded_trace\`, Tier A)**\n\n**Result: INTEGRITY FAIL** -- assay rce-verify is not available\n"
+            echo -e "$_PROBE_SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+            EOF_MARKER="ASSAY_SUMMARY_EOF_$(date +%s)"
+            echo "summary<<${EOF_MARKER}" >> "$GITHUB_OUTPUT"
+            echo -e "$_PROBE_SUMMARY" >> "$GITHUB_OUTPUT"
+            echo "${EOF_MARKER}" >> "$GITHUB_OUTPUT"
+            exit 2
+          fi
+
+          # 3. Pack discovery -- same glob, filter to directories
+          shopt -s nullglob
+          ALL_MATCHES=($INPUT_PACK_PATH)
+          shopt -u nullglob
+          REPLAY_ROOTS=()
+          for M in "${ALL_MATCHES[@]}"; do
+            [ -d "$M" ] && REPLAY_ROOTS+=("$M")
+          done
+
+          _replay_write_skip_outputs() {
+            local _SKIP_SUMMARY="### Assay Verification\n\n**Mode: RCE replay (\`recorded_trace\`, Tier A)**\n\n**Result: SKIPPED** -- no replay roots found (\`require-pack: false\`)\n"
+            echo "integrity=N/A" >> "$GITHUB_OUTPUT"
+            echo "claims=N/A" >> "$GITHUB_OUTPUT"
+            echo "exit_code=0" >> "$GITHUB_OUTPUT"
+            echo "pack_count=0" >> "$GITHUB_OUTPUT"
+            echo -e "$_SKIP_SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+            EOF_MARKER="ASSAY_SUMMARY_EOF_$(date +%s)"
+            echo "summary<<${EOF_MARKER}" >> "$GITHUB_OUTPUT"
+            echo -e "$_SKIP_SUMMARY" >> "$GITHUB_OUTPUT"
+            echo "${EOF_MARKER}" >> "$GITHUB_OUTPUT"
+          }
+
+          _replay_write_zero_pack_fail() {
+            local _MSG="$1"
+            local _FAIL_SUMMARY="### Assay Verification\n\n**Mode: RCE replay (\`recorded_trace\`, Tier A)**\n\n**Result: INTEGRITY FAIL** -- $_MSG\n"
+            echo "::error::$_MSG"
+            echo "integrity=FAIL" >> "$GITHUB_OUTPUT"
+            echo "claims=N/A" >> "$GITHUB_OUTPUT"
+            echo "exit_code=2" >> "$GITHUB_OUTPUT"
+            echo "pack_count=0" >> "$GITHUB_OUTPUT"
+            echo -e "$_FAIL_SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+            EOF_MARKER="ASSAY_SUMMARY_EOF_$(date +%s)"
+            echo "summary<<${EOF_MARKER}" >> "$GITHUB_OUTPUT"
+            echo -e "$_FAIL_SUMMARY" >> "$GITHUB_OUTPUT"
+            echo "${EOF_MARKER}" >> "$GITHUB_OUTPUT"
+          }
+
+          if [ ${#REPLAY_ROOTS[@]} -eq 0 ]; then
+            if [ "$INPUT_REQUIRE_PACK" != "true" ]; then
+              echo "::notice::No replay roots found (require-pack: false) -- skipping."
+              _replay_write_skip_outputs
+              exit 0
+            fi
+            _replay_write_zero_pack_fail "No replay roots matched: $INPUT_PACK_PATH"
+            exit 2
+          fi
+
+          # 4. Per-root loop
+          PACK_COUNT=0
+          WORST_EXIT=0
+          REPLAY_SUMMARY=""
+          for PACK_DIR in "${REPLAY_ROOTS[@]}"; do
+            PACK_COUNT=$((PACK_COUNT + 1))
+            PACK_NAME=$(basename "$PACK_DIR")
+
+            # Layout check — missing layout is INTEGRITY_FAIL for this root
+            LAYOUT_OK=1
+            for REQUIRED in pack_manifest.json receipt_pack.jsonl episode_contract.json inputs recorded_traces; do
+              if [ ! -e "$PACK_DIR/$REQUIRED" ]; then
+                echo "::error::Replay layout check failed for $PACK_NAME: missing $REQUIRED"
+                LAYOUT_OK=0
+              fi
+            done
+
+            if [ $LAYOUT_OK -eq 0 ]; then
+              WORST_EXIT=2
+              REPLAY_SUMMARY="${REPLAY_SUMMARY}| \`${PACK_NAME}\` | INTEGRITY_FAIL | FAIL | N/A | — | recorded_trace |\n"
+              continue
+            fi
+
+            # Run verifier
+            OUT_DIR="$PACK_DIR/$INPUT_REPLAY_OUTPUT_DIR"
+            RAW_JSON=$(assay rce-verify "$PACK_DIR" --out-dir "$OUT_DIR" --overwrite --json 2>&1)
+            RCE_EXIT=$?
+
+            # Parse verdict -- parse failure or CLI exit 3 → INTEGRITY_FAIL
+            VERDICT=$(echo "$RAW_JSON" | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['verdict'] if d.get('status')=='ok' else 'PARSE_ERROR')" 2>/dev/null || echo "PARSE_ERROR")
+
+            if [ "$VERDICT" = "PARSE_ERROR" ] || [ -z "$VERDICT" ] || [ "$RCE_EXIT" -eq 3 ]; then
+              echo "::error::Failed to parse assay rce-verify JSON output for $PACK_NAME (CLI exit $RCE_EXIT). Treating as INTEGRITY_FAIL."
+              WORST_EXIT=2
+              REPLAY_SUMMARY="${REPLAY_SUMMARY}| \`${PACK_NAME}\` | INTEGRITY_FAIL | FAIL | N/A | — | recorded_trace |\n"
+              echo "::group::[INTEGRITY_FAIL] $PACK_NAME"
+              echo "$RAW_JSON"
+              echo "::endgroup::"
+              continue
+            fi
+
+            # Map verdict to action semantics
+            case "$VERDICT" in
+              MATCH)
+                PACK_INTEGRITY="PASS"; PACK_CLAIMS="PASS"; PACK_EXIT=0 ;;
+              DIVERGE)
+                PACK_INTEGRITY="PASS"; PACK_CLAIMS="FAIL"; PACK_EXIT=1 ;;
+              INTEGRITY_FAIL)
+                PACK_INTEGRITY="FAIL"; PACK_CLAIMS="N/A"; PACK_EXIT=2 ;;
+              *)
+                echo "::error::Unknown RCE verdict '$VERDICT' for $PACK_NAME. Treating as INTEGRITY_FAIL."
+                PACK_INTEGRITY="FAIL"; PACK_CLAIMS="N/A"; PACK_EXIT=2
+                ;;
+            esac
+
+            if [ "$PACK_EXIT" -gt "$WORST_EXIT" ]; then WORST_EXIT=$PACK_EXIT; fi
+
+            # Read steps_replayed from sidecar (not in CLI --json output)
+            RESULT_SIDECAR="$OUT_DIR/rce_replay_result.json"
+            STEPS_REPLAYED="?"
+            if [ -f "$RESULT_SIDECAR" ]; then
+              STEPS_REPLAYED=$(python3 -c "import json;d=json.load(open('$RESULT_SIDECAR'));print(d.get('steps_replayed','?'))" 2>/dev/null || echo "?")
+            fi
+
+            REPLAY_SUMMARY="${REPLAY_SUMMARY}| \`${PACK_NAME}\` | ${VERDICT} | ${PACK_INTEGRITY} | ${PACK_CLAIMS} | ${STEPS_REPLAYED} | recorded_trace |\n"
+
+            echo "::group::[$VERDICT] $PACK_NAME"
+            echo "$RAW_JSON"
+            echo "::endgroup::"
+          done
+
+          case "$WORST_EXIT" in
+            0)
+              INTEGRITY_ALL="PASS"
+              CLAIMS_ALL="PASS"
+              ;;
+            1)
+              INTEGRITY_ALL="PASS"
+              CLAIMS_ALL="FAIL"
+              ;;
+            *)
+              INTEGRITY_ALL="FAIL"
+              CLAIMS_ALL="N/A"
+              ;;
+          esac
+
+          # 5. Write outputs and summary
+          echo "integrity=$INTEGRITY_ALL" >> "$GITHUB_OUTPUT"
+          echo "claims=$CLAIMS_ALL" >> "$GITHUB_OUTPUT"
+          echo "exit_code=$WORST_EXIT" >> "$GITHUB_OUTPUT"
+          echo "pack_count=$PACK_COUNT" >> "$GITHUB_OUTPUT"
+
+          FULL_SUMMARY="### Assay Verification\n\n**Mode: RCE replay (\`recorded_trace\`, Tier A)**\n\n"
+          if [ "$WORST_EXIT" -eq 0 ]; then
+            FULL_SUMMARY="${FULL_SUMMARY}**Result: PASS** (all traces match)\n\n"
+          elif [ "$WORST_EXIT" -eq 1 ]; then
+            FULL_SUMMARY="${FULL_SUMMARY}**Result: DIVERGE** (integrity intact, trace comparison failed)\n\n"
+          else
+            FULL_SUMMARY="${FULL_SUMMARY}**Result: INTEGRITY FAIL** (evidence tampered or layout invalid)\n\n"
+          fi
+          FULL_SUMMARY="${FULL_SUMMARY}| Pack | Verdict | Integrity | Claims | Steps Replayed | Replay Basis |\n"
+          FULL_SUMMARY="${FULL_SUMMARY}|------|---------|-----------|--------|----------------|---------------|\n"
+          FULL_SUMMARY="${FULL_SUMMARY}${REPLAY_SUMMARY}\n"
+          FULL_SUMMARY="${FULL_SUMMARY}> Exit code: \`${WORST_EXIT}\` (\`0\`=MATCH, \`1\`=DIVERGE, \`2\`=INTEGRITY_FAIL)\n"
+          FULL_SUMMARY="${FULL_SUMMARY}>\n"
+          FULL_SUMMARY="${FULL_SUMMARY}> Verified by [assay-ai](https://pypi.org/project/assay-ai/) $(assay version 2>/dev/null | head -1 || echo '')\n"
+
+          echo -e "$FULL_SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+          EOF_MARKER="ASSAY_SUMMARY_EOF_$(date +%s)"
+          echo "summary<<${EOF_MARKER}" >> "$GITHUB_OUTPUT"
+          echo -e "$FULL_SUMMARY" >> "$GITHUB_OUTPUT"
+          echo "${EOF_MARKER}" >> "$GITHUB_OUTPUT"
+
+          exit $WORST_EXIT
+        fi
+        # ── END RCE REPLAY MODE ──────────────────────────────────────────────────
+
         PACK_COUNT=0
         WORST_EXIT=0
         SUMMARY=""
@@ -380,6 +610,7 @@ runs:
         name: assay-proof-packs
         path: ${{ inputs.pack-path }}
         if-no-files-found: ignore
+        overwrite: true
 
     - name: Artifact exposure notice
       if: always() && inputs.upload-artifact == 'true'
