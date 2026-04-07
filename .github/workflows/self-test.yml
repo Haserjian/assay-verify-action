@@ -453,11 +453,15 @@ jobs:
           python-version: '3.11'
 
       - name: Install Assay and build rce-verify stub
+        id: stub_unavailable
         run: |
           pip install assay-ai
-          # Overwrite the installed assay entrypoint with a stub that fails rce-verify.
+          ASSAY_VERSION=$(python -c "from importlib.metadata import version; print(version('assay-ai'))")
+          echo "assay_version=$ASSAY_VERSION" >> "$GITHUB_OUTPUT"
+          # Pin the composite action to the exact installed release, then overwrite
+          # the assay entrypoint with a stub that fails rce-verify.
           # Direct path replacement ensures the stub survives the composite action's
-          # own pip install step — pip skips reinstall when same version is already
+          # own pip install step — pip skips reinstall when the same version is already
           # present, so the entrypoint file is not touched.
           REAL_ASSAY=$(which assay)
           cp "$REAL_ASSAY" "${REAL_ASSAY}.real"
@@ -472,6 +476,9 @@ jobs:
           chmod +x "$REAL_ASSAY"
           # Sanity: stub must be the active binary and must contain the sentinel
           grep -q "rce-verify is not available" "$REAL_ASSAY"
+          # Build a real replayable root so this job reaches the unavailable-verifier
+          # branch rather than failing earlier on zero matched roots.
+          python scripts/build-rce-test-pack.py match proof_pack_unavailable
 
       - name: Verify in rce_replay mode (expect fail-closed)
         id: verify
@@ -479,6 +486,7 @@ jobs:
         uses: ./
         with:
           pack-path: 'proof_pack_*/'
+          assay-version: '${{ steps.stub_unavailable.outputs.assay_version }}'
           verification-mode: 'rce_replay'
           comment-on-pr: 'false'
           upload-artifact: 'false'
@@ -510,3 +518,82 @@ jobs:
             exit 1
           fi
           echo "RCE verifier-unavailable fail-closed test passed."
+
+  test-rce-replay-skip-no-roots-with-broken-verifier:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Assay and build rce-verify stub
+        id: stub_skip_no_roots
+        run: |
+          pip install assay-ai
+          ASSAY_VERSION=$(python -c "from importlib.metadata import version; print(version('assay-ai'))")
+          echo "assay_version=$ASSAY_VERSION" >> "$GITHUB_OUTPUT"
+          REAL_ASSAY=$(which assay)
+          cp "$REAL_ASSAY" "${REAL_ASSAY}.real"
+          {
+            printf '%s\n' '#!/usr/bin/env bash'
+            printf '%s\n' 'if [ "$1" = "rce-verify" ]; then'
+            printf '%s\n' '  echo "rce-verify is not available in this stub" >&2'
+            printf '%s\n' '  exit 127'
+            printf '%s\n' 'fi'
+            printf 'exec "%s.real" "$@"\n' "$REAL_ASSAY"
+          } > "$REAL_ASSAY"
+          chmod +x "$REAL_ASSAY"
+          grep -q "rce-verify is not available" "$REAL_ASSAY"
+
+      - name: Verify rce_replay skip path with no roots
+        id: verify
+        continue-on-error: true
+        uses: ./
+        with:
+          pack-path: 'no-rce-roots-*/'
+          assay-version: '${{ steps.stub_skip_no_roots.outputs.assay_version }}'
+          verification-mode: 'rce_replay'
+          require-pack: 'false'
+          comment-on-pr: 'false'
+          upload-artifact: 'false'
+
+      - name: Assert skip path ignores verifier availability
+        shell: bash
+        env:
+          VERIFY_SUMMARY: ${{ steps.verify.outputs.summary }}
+        run: |
+          OUTCOME="${{ steps.verify.outcome }}"
+          EXIT="${{ steps.verify.outputs.exit-code }}"
+          INTEGRITY="${{ steps.verify.outputs.integrity }}"
+          CLAIMS="${{ steps.verify.outputs.claims }}"
+          PACK_COUNT="${{ steps.verify.outputs.pack-count }}"
+          echo "outcome=$OUTCOME exit-code=$EXIT integrity=$INTEGRITY claims=$CLAIMS pack-count=$PACK_COUNT"
+          if [ "$OUTCOME" != "success" ]; then
+            echo "::error::Expected skip path to succeed but outcome was: $OUTCOME"
+            exit 1
+          fi
+          if [ "$EXIT" != "0" ]; then
+            echo "::error::Expected exit-code=0 for skip path but got: $EXIT"
+            exit 1
+          fi
+          if [ "$INTEGRITY" != "N/A" ]; then
+            echo "::error::Expected integrity=N/A for skip path but got: $INTEGRITY"
+            exit 1
+          fi
+          if [ "$CLAIMS" != "N/A" ]; then
+            echo "::error::Expected claims=N/A for skip path but got: $CLAIMS"
+            exit 1
+          fi
+          if [ "$PACK_COUNT" != "0" ]; then
+            echo "::error::Expected pack-count=0 for skip path but got: $PACK_COUNT"
+            exit 1
+          fi
+          if [[ "$VERIFY_SUMMARY" != *"SKIPPED"* ]]; then
+            echo "::error::Expected SKIPPED in summary"
+            echo "$VERIFY_SUMMARY"
+            exit 1
+          fi
+          echo "RCE replay no-root skip test passed."
