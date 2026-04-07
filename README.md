@@ -51,6 +51,14 @@ jobs:
           require-claim-pass: 'true'
 ```
 
+## Planned RCE Replay Mode
+
+RCE replay verification is not implemented in this action yet.
+
+The gate document for that work lives in [RCE_REPLAY_ACTION_CONTRACT.md](./RCE_REPLAY_ACTION_CONTRACT.md). It defines the planned replay-mode inputs, artifact layout expectations, verdict mapping, summary behavior, and explicit non-goals for PR E.
+
+Until that lands, run `assay rce-verify` directly in your workflow after generating replayable episode packs.
+
 ## Inputs
 
 | Input | Default | Description |
