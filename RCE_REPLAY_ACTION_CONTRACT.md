@@ -4,6 +4,8 @@ Status: design gate for PR E. This branch implements the contract in assay-verif
 
 This note defines the user-facing contract for adding Replay-Constrained Episode (RCE) verification to this action without widening scope beyond the current recorded-trace verifier in Haserjian/assay PR B and the gallery scenarios in Haserjian/assay-proof-gallery PR C.
 
+This file governs the action surface. The determinism boundary behind replay verdicts is defined separately in [RCE_REPLAY_DETERMINISM_CONTRACT.md](./RCE_REPLAY_DETERMINISM_CONTRACT.md).
+
 ## Purpose
 
 - Keep the existing proof-pack verification path as the default and preserve backward compatibility.
@@ -93,6 +95,8 @@ Replay mode must remain a thin wrapper around the canonical CLI.
 - After installation, replay mode must probe for `assay rce-verify` and fail closed with a clear error if the command is unavailable.
 - The action must parse the CLI's JSON output instead of scraping human-readable text.
 - JSON parse failure is treated as exit `2` because the action can no longer trust the verifier result surface.
+
+Environment admissibility, canonicalization tolerance, and `MATCH` vs `DIVERGE` vs `INTEGRITY_FAIL` replay-boundary rules are out of scope for this file and governed by [RCE_REPLAY_DETERMINISM_CONTRACT.md](./RCE_REPLAY_DETERMINISM_CONTRACT.md).
 
 PR E should document a minimum `assay-ai` version once the replay-enabled release is tagged. Until then, the contract is semantic: replay mode requires the first release that contains PR B.
 

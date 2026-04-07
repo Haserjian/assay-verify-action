@@ -57,6 +57,8 @@ RCE replay verification is available through `verification-mode: rce_replay`.
 
 The contract for replay mode lives in [RCE_REPLAY_ACTION_CONTRACT.md](./RCE_REPLAY_ACTION_CONTRACT.md). It defines the replay-mode inputs, artifact layout expectations, verdict mapping, summary behavior, and explicit non-goals for PR E.
 
+The determinism boundary for replay verdicts lives in [RCE_REPLAY_DETERMINISM_CONTRACT.md](./RCE_REPLAY_DETERMINISM_CONTRACT.md). That note defines what is pinned, what variation is admissible, and when `MATCH`, `DIVERGE`, or `INTEGRITY_FAIL` is the correct classification.
+
 Replay mode still keeps the proof-pack path as the default. Use `verification-mode: rce_replay` only for replayable episode roots that already contain the layout expected by `assay rce-verify`.
 
 ### Replay mode outcome guide
