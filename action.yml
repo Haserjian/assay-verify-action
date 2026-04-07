@@ -73,6 +73,18 @@ outputs:
   pack-count:
     description: 'Number of packs verified'
     value: ${{ steps.verify.outputs.pack_count }}
+  replay-state:
+    description: 'Machine-readable replay execution state'
+    value: ${{ steps.verify.outputs.replay_state }}
+  replay-verdict:
+    description: 'Aggregate replay verdict: MATCH, DIVERGE, INTEGRITY_FAIL, or N/A'
+    value: ${{ steps.verify.outputs.replay_verdict }}
+  replay-roots-matched:
+    description: 'Number of replay roots matched during discovery'
+    value: ${{ steps.verify.outputs.replay_roots_matched }}
+  replay-results-json:
+    description: 'Machine-readable per-root replay results as compact JSON'
+    value: ${{ steps.verify.outputs.replay_results_json }}
   summary:
     description: 'Markdown summary of verification results'
     value: ${{ steps.verify.outputs.summary }}
@@ -113,6 +125,55 @@ runs:
       run: |
         set +e
 
+        _write_multiline_output() {
+          local _NAME="$1"
+          local _VALUE="$2"
+          local _EOF_MARKER="ASSAY_OUTPUT_EOF_${_NAME}_$$_${RANDOM}"
+          echo "${_NAME}<<${_EOF_MARKER}" >> "$GITHUB_OUTPUT"
+          echo "$_VALUE" >> "$GITHUB_OUTPUT"
+          echo "${_EOF_MARKER}" >> "$GITHUB_OUTPUT"
+        }
+
+        _write_replay_outputs() {
+          local _STATE="$1"
+          local _VERDICT="$2"
+          local _ROOTS="$3"
+          local _RESULTS_JSON="${4:-[]}"
+          echo "replay_state=${_STATE}" >> "$GITHUB_OUTPUT"
+          echo "replay_verdict=${_VERDICT}" >> "$GITHUB_OUTPUT"
+          echo "replay_roots_matched=${_ROOTS}" >> "$GITHUB_OUTPUT"
+          _write_multiline_output "replay_results_json" "$_RESULTS_JSON"
+        }
+
+        _append_replay_result() {
+          local _CURRENT_JSON="$1"
+          local _PACK_NAME="$2"
+          local _VERDICT="$3"
+          local _INTEGRITY="$4"
+          local _CLAIMS="$5"
+          local _STEPS_REPLAYED="$6"
+          python3 - "$_CURRENT_JSON" "$_PACK_NAME" "$_VERDICT" "$_INTEGRITY" "$_CLAIMS" "$_STEPS_REPLAYED" <<'PY'
+            import json
+            import sys
+
+            results = json.loads(sys.argv[1])
+            results.append(
+              {
+                "pack": sys.argv[2],
+                "verdict": sys.argv[3],
+                "integrity": sys.argv[4],
+                "claims": sys.argv[5],
+                "steps_replayed": sys.argv[6],
+                "replay_basis": "recorded_trace",
+              }
+            )
+            print(json.dumps(results, separators=(",", ":")))
+            PY
+            if [ $? -ne 0 ]; then
+              echo "$_CURRENT_JSON"
+            fi
+        }
+
         # ── RCE REPLAY MODE ─────────────────────────────────────────────────────
         if [ "$INPUT_VERIFICATION_MODE" = "rce_replay" ]; then
 
@@ -144,6 +205,7 @@ runs:
             echo "claims=N/A" >> "$GITHUB_OUTPUT"
             echo "exit_code=2" >> "$GITHUB_OUTPUT"
             echo "pack_count=0" >> "$GITHUB_OUTPUT"
+            _write_replay_outputs "configuration_rejected" "INTEGRITY_FAIL" "0" "[]"
             echo -e "$_GUARD_SUMMARY" >> "$GITHUB_STEP_SUMMARY"
             EOF_MARKER="ASSAY_SUMMARY_EOF_$(date +%s)"
             echo "summary<<${EOF_MARKER}" >> "$GITHUB_OUTPUT"
@@ -167,6 +229,7 @@ runs:
             echo "claims=N/A" >> "$GITHUB_OUTPUT"
             echo "exit_code=0" >> "$GITHUB_OUTPUT"
             echo "pack_count=0" >> "$GITHUB_OUTPUT"
+            _write_replay_outputs "skipped_no_roots" "N/A" "0" "[]"
             echo -e "$_SKIP_SUMMARY" >> "$GITHUB_STEP_SUMMARY"
             EOF_MARKER="ASSAY_SUMMARY_EOF_$(date +%s)"
             echo "summary<<${EOF_MARKER}" >> "$GITHUB_OUTPUT"
@@ -182,6 +245,7 @@ runs:
             echo "claims=N/A" >> "$GITHUB_OUTPUT"
             echo "exit_code=2" >> "$GITHUB_OUTPUT"
             echo "pack_count=0" >> "$GITHUB_OUTPUT"
+            _write_replay_outputs "zero_roots_required" "INTEGRITY_FAIL" "0" "[]"
             echo -e "$_FAIL_SUMMARY" >> "$GITHUB_STEP_SUMMARY"
             EOF_MARKER="ASSAY_SUMMARY_EOF_$(date +%s)"
             echo "summary<<${EOF_MARKER}" >> "$GITHUB_OUTPUT"
@@ -206,6 +270,7 @@ runs:
             echo "claims=N/A" >> "$GITHUB_OUTPUT"
             echo "exit_code=2" >> "$GITHUB_OUTPUT"
             echo "pack_count=0" >> "$GITHUB_OUTPUT"
+            _write_replay_outputs "verifier_unavailable" "INTEGRITY_FAIL" "${#REPLAY_ROOTS[@]}" "[]"
             _PROBE_SUMMARY="### Assay Verification\n\n**Mode: RCE replay (\`recorded_trace\`, Tier A)**\n\n**Result: INTEGRITY FAIL** -- assay rce-verify is not available\n"
             echo -e "$_PROBE_SUMMARY" >> "$GITHUB_STEP_SUMMARY"
             EOF_MARKER="ASSAY_SUMMARY_EOF_$(date +%s)"
@@ -219,6 +284,7 @@ runs:
           PACK_COUNT=0
           WORST_EXIT=0
           REPLAY_SUMMARY=""
+          REPLAY_RESULTS_JSON="[]"
           for PACK_DIR in "${REPLAY_ROOTS[@]}"; do
             PACK_COUNT=$((PACK_COUNT + 1))
             PACK_NAME=$(basename "$PACK_DIR")
@@ -234,6 +300,7 @@ runs:
 
             if [ $LAYOUT_OK -eq 0 ]; then
               WORST_EXIT=2
+              REPLAY_RESULTS_JSON=$(_append_replay_result "$REPLAY_RESULTS_JSON" "$PACK_NAME" "INTEGRITY_FAIL" "FAIL" "N/A" "?")
               REPLAY_SUMMARY="${REPLAY_SUMMARY}| \`${PACK_NAME}\` | INTEGRITY_FAIL | FAIL | N/A | — | recorded_trace |\n"
               continue
             fi
@@ -249,6 +316,7 @@ runs:
             if [ "$VERDICT" = "PARSE_ERROR" ] || [ -z "$VERDICT" ] || [ "$RCE_EXIT" -eq 3 ]; then
               echo "::error::Failed to parse assay rce-verify JSON output for $PACK_NAME (CLI exit $RCE_EXIT). Treating as INTEGRITY_FAIL."
               WORST_EXIT=2
+              REPLAY_RESULTS_JSON=$(_append_replay_result "$REPLAY_RESULTS_JSON" "$PACK_NAME" "INTEGRITY_FAIL" "FAIL" "N/A" "?")
               REPLAY_SUMMARY="${REPLAY_SUMMARY}| \`${PACK_NAME}\` | INTEGRITY_FAIL | FAIL | N/A | — | recorded_trace |\n"
               echo "::group::[INTEGRITY_FAIL] $PACK_NAME"
               echo "$RAW_JSON"
@@ -279,6 +347,7 @@ runs:
               STEPS_REPLAYED=$(python3 -c "import json;d=json.load(open('$RESULT_SIDECAR'));print(d.get('steps_replayed','?'))" 2>/dev/null || echo "?")
             fi
 
+            REPLAY_RESULTS_JSON=$(_append_replay_result "$REPLAY_RESULTS_JSON" "$PACK_NAME" "$VERDICT" "$PACK_INTEGRITY" "$PACK_CLAIMS" "$STEPS_REPLAYED")
             REPLAY_SUMMARY="${REPLAY_SUMMARY}| \`${PACK_NAME}\` | ${VERDICT} | ${PACK_INTEGRITY} | ${PACK_CLAIMS} | ${STEPS_REPLAYED} | recorded_trace |\n"
 
             echo "::group::[$VERDICT] $PACK_NAME"
@@ -290,14 +359,17 @@ runs:
             0)
               INTEGRITY_ALL="PASS"
               CLAIMS_ALL="PASS"
+              REPLAY_OVERALL_VERDICT="MATCH"
               ;;
             1)
               INTEGRITY_ALL="PASS"
               CLAIMS_ALL="FAIL"
+              REPLAY_OVERALL_VERDICT="DIVERGE"
               ;;
             *)
               INTEGRITY_ALL="FAIL"
               CLAIMS_ALL="N/A"
+              REPLAY_OVERALL_VERDICT="INTEGRITY_FAIL"
               ;;
           esac
 
@@ -306,6 +378,7 @@ runs:
           echo "claims=$CLAIMS_ALL" >> "$GITHUB_OUTPUT"
           echo "exit_code=$WORST_EXIT" >> "$GITHUB_OUTPUT"
           echo "pack_count=$PACK_COUNT" >> "$GITHUB_OUTPUT"
+          _write_replay_outputs "completed" "$REPLAY_OVERALL_VERDICT" "$PACK_COUNT" "$REPLAY_RESULTS_JSON"
 
           FULL_SUMMARY="### Assay Verification\n\n**Mode: RCE replay (\`recorded_trace\`, Tier A)**\n\n"
           if [ "$WORST_EXIT" -eq 0 ]; then
@@ -352,6 +425,7 @@ runs:
             echo "claims=N/A" >> "$GITHUB_OUTPUT"
             echo "exit_code=0" >> "$GITHUB_OUTPUT"
             echo "pack_count=0" >> "$GITHUB_OUTPUT"
+            _write_replay_outputs "not_requested" "N/A" "0" "[]"
             EOF_MARKER="ASSAY_SUMMARY_EOF_$(date +%s)"
             echo "summary<<${EOF_MARKER}" >> "$GITHUB_OUTPUT"
             echo -e "$SKIP_SUMMARY" >> "$GITHUB_OUTPUT"
@@ -384,6 +458,7 @@ runs:
           echo "claims=N/A" >> "$GITHUB_OUTPUT"
           echo "exit_code=2" >> "$GITHUB_OUTPUT"
           echo "pack_count=0" >> "$GITHUB_OUTPUT"
+          _write_replay_outputs "not_requested" "N/A" "0" "[]"
           EOF_MARKER="ASSAY_SUMMARY_EOF_$(date +%s)"
           echo "summary<<${EOF_MARKER}" >> "$GITHUB_OUTPUT"
           echo -e "$ZERO_SUMMARY" >> "$GITHUB_OUTPUT"
@@ -493,6 +568,7 @@ runs:
         echo "claims=$CLAIMS_ALL" >> "$GITHUB_OUTPUT"
         echo "exit_code=$WORST_EXIT" >> "$GITHUB_OUTPUT"
         echo "pack_count=$PACK_COUNT" >> "$GITHUB_OUTPUT"
+        _write_replay_outputs "not_requested" "N/A" "0" "[]"
 
         # Build full summary markdown
         FULL_SUMMARY="### Assay Verification\n\n"

@@ -42,7 +42,11 @@ jobs:
         shell: bash
         env:
           VERIFY_SUMMARY: ${{ steps.verify.outputs.summary }}
+          REPLAY_RESULTS_JSON: ${{ steps.verify.outputs.replay-results-json }}
         run: |
+          REPLAY_STATE="${{ steps.verify.outputs.replay-state }}"
+          REPLAY_VERDICT="${{ steps.verify.outputs.replay-verdict }}"
+          REPLAY_ROOTS="${{ steps.verify.outputs.replay-roots-matched }}"
           if [[ "$VERIFY_SUMMARY" != *"SHADOW MODE -- not enforced"* ]]; then
             echo "::error::Expected shadow warning in summary output"
             echo "$VERIFY_SUMMARY"
@@ -51,6 +55,22 @@ jobs:
           if [[ "$VERIFY_SUMMARY" == *"**Result: PASS**"* ]]; then
             echo "::error::Shadow mode must not be labeled as PASS"
             echo "$VERIFY_SUMMARY"
+            exit 1
+          fi
+          if [ "$REPLAY_STATE" != "not_requested" ]; then
+            echo "::error::Expected replay-state=not_requested but got: $REPLAY_STATE"
+            exit 1
+          fi
+          if [ "$REPLAY_VERDICT" != "N/A" ]; then
+            echo "::error::Expected replay-verdict=N/A but got: $REPLAY_VERDICT"
+            exit 1
+          fi
+          if [ "$REPLAY_ROOTS" != "0" ]; then
+            echo "::error::Expected replay-roots-matched=0 but got: $REPLAY_ROOTS"
+            exit 1
+          fi
+          if [ "$REPLAY_RESULTS_JSON" != "[]" ]; then
+            echo "::error::Expected replay-results-json=[] but got: $REPLAY_RESULTS_JSON"
             exit 1
           fi
           echo "Shadow summary labeling test passed."
@@ -240,12 +260,16 @@ jobs:
         shell: bash
         env:
           VERIFY_SUMMARY: ${{ steps.verify.outputs.summary }}
+          REPLAY_RESULTS_JSON: ${{ steps.verify.outputs.replay-results-json }}
         run: |
           EXIT="${{ steps.verify.outputs.exit-code }}"
           INTEGRITY="${{ steps.verify.outputs.integrity }}"
           CLAIMS="${{ steps.verify.outputs.claims }}"
           OUTCOME="${{ steps.verify.outcome }}"
-          echo "outcome=$OUTCOME exit-code=$EXIT integrity=$INTEGRITY claims=$CLAIMS"
+          REPLAY_STATE="${{ steps.verify.outputs.replay-state }}"
+          REPLAY_VERDICT="${{ steps.verify.outputs.replay-verdict }}"
+          REPLAY_ROOTS="${{ steps.verify.outputs.replay-roots-matched }}"
+          echo "outcome=$OUTCOME exit-code=$EXIT integrity=$INTEGRITY claims=$CLAIMS replay-state=$REPLAY_STATE replay-verdict=$REPLAY_VERDICT replay-roots=$REPLAY_ROOTS"
           if [ "$OUTCOME" != "success" ]; then
             echo "::error::Expected success but outcome was: $OUTCOME"
             exit 1
@@ -262,6 +286,18 @@ jobs:
             echo "::error::Expected claims=PASS but got: $CLAIMS"
             exit 1
           fi
+          if [ "$REPLAY_STATE" != "completed" ]; then
+            echo "::error::Expected replay-state=completed but got: $REPLAY_STATE"
+            exit 1
+          fi
+          if [ "$REPLAY_VERDICT" != "MATCH" ]; then
+            echo "::error::Expected replay-verdict=MATCH but got: $REPLAY_VERDICT"
+            exit 1
+          fi
+          if [ "$REPLAY_ROOTS" != "1" ]; then
+            echo "::error::Expected replay-roots-matched=1 but got: $REPLAY_ROOTS"
+            exit 1
+          fi
           if [[ "$VERIFY_SUMMARY" != *"MATCH"* ]]; then
             echo "::error::Expected MATCH in summary"
             echo "$VERIFY_SUMMARY"
@@ -272,6 +308,17 @@ jobs:
             echo "$VERIFY_SUMMARY"
             exit 1
           fi
+          python - <<'PY'
+          import json
+          import os
+
+            try:
+              rows = json.loads(os.environ["REPLAY_RESULTS_JSON"])
+            except json.JSONDecodeError as exc:
+              raise SystemExit(f"Invalid replay-results-json payload: {exc}")
+          if len(rows) != 1 or rows[0]["pack"] != "rce-test-match" or rows[0]["verdict"] != "MATCH":
+              raise SystemExit(f"Unexpected replay-results-json payload: {rows}")
+          PY
           echo "RCE replay MATCH test passed."
 
   test-rce-replay-diverge:
@@ -303,12 +350,16 @@ jobs:
         shell: bash
         env:
           VERIFY_SUMMARY: ${{ steps.verify.outputs.summary }}
+          REPLAY_RESULTS_JSON: ${{ steps.verify.outputs.replay-results-json }}
         run: |
           EXIT="${{ steps.verify.outputs.exit-code }}"
           INTEGRITY="${{ steps.verify.outputs.integrity }}"
           CLAIMS="${{ steps.verify.outputs.claims }}"
           OUTCOME="${{ steps.verify.outcome }}"
-          echo "outcome=$OUTCOME exit-code=$EXIT integrity=$INTEGRITY claims=$CLAIMS"
+          REPLAY_STATE="${{ steps.verify.outputs.replay-state }}"
+          REPLAY_VERDICT="${{ steps.verify.outputs.replay-verdict }}"
+          REPLAY_ROOTS="${{ steps.verify.outputs.replay-roots-matched }}"
+          echo "outcome=$OUTCOME exit-code=$EXIT integrity=$INTEGRITY claims=$CLAIMS replay-state=$REPLAY_STATE replay-verdict=$REPLAY_VERDICT replay-roots=$REPLAY_ROOTS"
           if [ "$OUTCOME" != "failure" ]; then
             echo "::error::Expected failure but outcome was: $OUTCOME"
             exit 1
@@ -325,11 +376,34 @@ jobs:
             echo "::error::Expected claims=FAIL but got: $CLAIMS"
             exit 1
           fi
+          if [ "$REPLAY_STATE" != "completed" ]; then
+            echo "::error::Expected replay-state=completed but got: $REPLAY_STATE"
+            exit 1
+          fi
+          if [ "$REPLAY_VERDICT" != "DIVERGE" ]; then
+            echo "::error::Expected replay-verdict=DIVERGE but got: $REPLAY_VERDICT"
+            exit 1
+          fi
+          if [ "$REPLAY_ROOTS" != "1" ]; then
+            echo "::error::Expected replay-roots-matched=1 but got: $REPLAY_ROOTS"
+            exit 1
+          fi
           if [[ "$VERIFY_SUMMARY" != *"DIVERGE"* ]]; then
             echo "::error::Expected DIVERGE in summary"
             echo "$VERIFY_SUMMARY"
             exit 1
           fi
+          python - <<'PY'
+          import json
+          import os
+
+            try:
+              rows = json.loads(os.environ["REPLAY_RESULTS_JSON"])
+            except json.JSONDecodeError as exc:
+              raise SystemExit(f"Invalid replay-results-json payload: {exc}")
+          if len(rows) != 1 or rows[0]["pack"] != "rce-test-diverge" or rows[0]["verdict"] != "DIVERGE":
+              raise SystemExit(f"Unexpected replay-results-json payload: {rows}")
+          PY
           echo "RCE replay DIVERGE test passed."
 
   test-rce-replay-integrity-fail:
@@ -361,12 +435,16 @@ jobs:
         shell: bash
         env:
           VERIFY_SUMMARY: ${{ steps.verify.outputs.summary }}
+          REPLAY_RESULTS_JSON: ${{ steps.verify.outputs.replay-results-json }}
         run: |
           EXIT="${{ steps.verify.outputs.exit-code }}"
           INTEGRITY="${{ steps.verify.outputs.integrity }}"
           CLAIMS="${{ steps.verify.outputs.claims }}"
           OUTCOME="${{ steps.verify.outcome }}"
-          echo "outcome=$OUTCOME exit-code=$EXIT integrity=$INTEGRITY claims=$CLAIMS"
+          REPLAY_STATE="${{ steps.verify.outputs.replay-state }}"
+          REPLAY_VERDICT="${{ steps.verify.outputs.replay-verdict }}"
+          REPLAY_ROOTS="${{ steps.verify.outputs.replay-roots-matched }}"
+          echo "outcome=$OUTCOME exit-code=$EXIT integrity=$INTEGRITY claims=$CLAIMS replay-state=$REPLAY_STATE replay-verdict=$REPLAY_VERDICT replay-roots=$REPLAY_ROOTS"
           if [ "$OUTCOME" != "failure" ]; then
             echo "::error::Expected failure but outcome was: $OUTCOME"
             exit 1
@@ -383,11 +461,34 @@ jobs:
             echo "::error::Expected claims=N/A but got: $CLAIMS"
             exit 1
           fi
+          if [ "$REPLAY_STATE" != "completed" ]; then
+            echo "::error::Expected replay-state=completed but got: $REPLAY_STATE"
+            exit 1
+          fi
+          if [ "$REPLAY_VERDICT" != "INTEGRITY_FAIL" ]; then
+            echo "::error::Expected replay-verdict=INTEGRITY_FAIL but got: $REPLAY_VERDICT"
+            exit 1
+          fi
+          if [ "$REPLAY_ROOTS" != "1" ]; then
+            echo "::error::Expected replay-roots-matched=1 but got: $REPLAY_ROOTS"
+            exit 1
+          fi
           if [[ "$VERIFY_SUMMARY" != *"INTEGRITY FAIL"* ]]; then
             echo "::error::Expected INTEGRITY FAIL in summary"
             echo "$VERIFY_SUMMARY"
             exit 1
           fi
+          python - <<'PY'
+          import json
+          import os
+
+            try:
+              rows = json.loads(os.environ["REPLAY_RESULTS_JSON"])
+            except json.JSONDecodeError as exc:
+              raise SystemExit(f"Invalid replay-results-json payload: {exc}")
+          if len(rows) != 1 or rows[0]["pack"] != "rce-test-tampered" or rows[0]["verdict"] != "INTEGRITY_FAIL":
+              raise SystemExit(f"Unexpected replay-results-json payload: {rows}")
+          PY
           echo "RCE replay INTEGRITY_FAIL test passed."
 
   test-rce-rejected-inputs:
@@ -418,11 +519,15 @@ jobs:
         shell: bash
         env:
           VERIFY_SUMMARY: ${{ steps.verify.outputs.summary }}
+          REPLAY_RESULTS_JSON: ${{ steps.verify.outputs.replay-results-json }}
         run: |
           OUTCOME="${{ steps.verify.outcome }}"
           EXIT="${{ steps.verify.outputs.exit-code }}"
           CLAIMS="${{ steps.verify.outputs.claims }}"
-          echo "outcome=$OUTCOME exit-code=$EXIT claims=$CLAIMS"
+          REPLAY_STATE="${{ steps.verify.outputs.replay-state }}"
+          REPLAY_VERDICT="${{ steps.verify.outputs.replay-verdict }}"
+          REPLAY_ROOTS="${{ steps.verify.outputs.replay-roots-matched }}"
+          echo "outcome=$OUTCOME exit-code=$EXIT claims=$CLAIMS replay-state=$REPLAY_STATE replay-verdict=$REPLAY_VERDICT replay-roots=$REPLAY_ROOTS"
           if [ "$OUTCOME" != "failure" ]; then
             echo "::error::Expected failure for rejected input but outcome was: $OUTCOME"
             exit 1
@@ -433,6 +538,22 @@ jobs:
           fi
           if [ "$CLAIMS" != "N/A" ]; then
             echo "::error::Expected claims=N/A for config error but got: $CLAIMS"
+            exit 1
+          fi
+          if [ "$REPLAY_STATE" != "configuration_rejected" ]; then
+            echo "::error::Expected replay-state=configuration_rejected but got: $REPLAY_STATE"
+            exit 1
+          fi
+          if [ "$REPLAY_VERDICT" != "INTEGRITY_FAIL" ]; then
+            echo "::error::Expected replay-verdict=INTEGRITY_FAIL but got: $REPLAY_VERDICT"
+            exit 1
+          fi
+          if [ "$REPLAY_ROOTS" != "0" ]; then
+            echo "::error::Expected replay-roots-matched=0 but got: $REPLAY_ROOTS"
+            exit 1
+          fi
+          if [ "$REPLAY_RESULTS_JSON" != "[]" ]; then
+            echo "::error::Expected replay-results-json=[] but got: $REPLAY_RESULTS_JSON"
             exit 1
           fi
           if [[ "$VERIFY_SUMMARY" != *"configuration rejected for rce_replay mode"* ]]; then
@@ -495,11 +616,15 @@ jobs:
         shell: bash
         env:
           VERIFY_SUMMARY: ${{ steps.verify.outputs.summary }}
+          REPLAY_RESULTS_JSON: ${{ steps.verify.outputs.replay-results-json }}
         run: |
           OUTCOME="${{ steps.verify.outcome }}"
           EXIT="${{ steps.verify.outputs.exit-code }}"
           CLAIMS="${{ steps.verify.outputs.claims }}"
-          echo "outcome=$OUTCOME exit-code=$EXIT claims=$CLAIMS"
+          REPLAY_STATE="${{ steps.verify.outputs.replay-state }}"
+          REPLAY_VERDICT="${{ steps.verify.outputs.replay-verdict }}"
+          REPLAY_ROOTS="${{ steps.verify.outputs.replay-roots-matched }}"
+          echo "outcome=$OUTCOME exit-code=$EXIT claims=$CLAIMS replay-state=$REPLAY_STATE replay-verdict=$REPLAY_VERDICT replay-roots=$REPLAY_ROOTS"
           if [ "$OUTCOME" != "failure" ]; then
             echo "::error::Expected fail-closed when rce-verify unavailable but outcome was: $OUTCOME"
             exit 1
@@ -510,6 +635,22 @@ jobs:
           fi
           if [ "$CLAIMS" != "N/A" ]; then
             echo "::error::Expected claims=N/A for unavailable verifier but got: $CLAIMS"
+            exit 1
+          fi
+          if [ "$REPLAY_STATE" != "verifier_unavailable" ]; then
+            echo "::error::Expected replay-state=verifier_unavailable but got: $REPLAY_STATE"
+            exit 1
+          fi
+          if [ "$REPLAY_VERDICT" != "INTEGRITY_FAIL" ]; then
+            echo "::error::Expected replay-verdict=INTEGRITY_FAIL but got: $REPLAY_VERDICT"
+            exit 1
+          fi
+          if [ "$REPLAY_ROOTS" != "1" ]; then
+            echo "::error::Expected replay-roots-matched=1 but got: $REPLAY_ROOTS"
+            exit 1
+          fi
+          if [ "$REPLAY_RESULTS_JSON" != "[]" ]; then
+            echo "::error::Expected replay-results-json=[] but got: $REPLAY_RESULTS_JSON"
             exit 1
           fi
           if [[ "$VERIFY_SUMMARY" != *"rce-verify is not available"* ]]; then
@@ -564,13 +705,17 @@ jobs:
         shell: bash
         env:
           VERIFY_SUMMARY: ${{ steps.verify.outputs.summary }}
+          REPLAY_RESULTS_JSON: ${{ steps.verify.outputs.replay-results-json }}
         run: |
           OUTCOME="${{ steps.verify.outcome }}"
           EXIT="${{ steps.verify.outputs.exit-code }}"
           INTEGRITY="${{ steps.verify.outputs.integrity }}"
           CLAIMS="${{ steps.verify.outputs.claims }}"
           PACK_COUNT="${{ steps.verify.outputs.pack-count }}"
-          echo "outcome=$OUTCOME exit-code=$EXIT integrity=$INTEGRITY claims=$CLAIMS pack-count=$PACK_COUNT"
+          REPLAY_STATE="${{ steps.verify.outputs.replay-state }}"
+          REPLAY_VERDICT="${{ steps.verify.outputs.replay-verdict }}"
+          REPLAY_ROOTS="${{ steps.verify.outputs.replay-roots-matched }}"
+          echo "outcome=$OUTCOME exit-code=$EXIT integrity=$INTEGRITY claims=$CLAIMS pack-count=$PACK_COUNT replay-state=$REPLAY_STATE replay-verdict=$REPLAY_VERDICT replay-roots=$REPLAY_ROOTS"
           if [ "$OUTCOME" != "success" ]; then
             echo "::error::Expected skip path to succeed but outcome was: $OUTCOME"
             exit 1
@@ -589,6 +734,22 @@ jobs:
           fi
           if [ "$PACK_COUNT" != "0" ]; then
             echo "::error::Expected pack-count=0 for skip path but got: $PACK_COUNT"
+            exit 1
+          fi
+          if [ "$REPLAY_STATE" != "skipped_no_roots" ]; then
+            echo "::error::Expected replay-state=skipped_no_roots but got: $REPLAY_STATE"
+            exit 1
+          fi
+          if [ "$REPLAY_VERDICT" != "N/A" ]; then
+            echo "::error::Expected replay-verdict=N/A but got: $REPLAY_VERDICT"
+            exit 1
+          fi
+          if [ "$REPLAY_ROOTS" != "0" ]; then
+            echo "::error::Expected replay-roots-matched=0 but got: $REPLAY_ROOTS"
+            exit 1
+          fi
+          if [ "$REPLAY_RESULTS_JSON" != "[]" ]; then
+            echo "::error::Expected replay-results-json=[] but got: $REPLAY_RESULTS_JSON"
             exit 1
           fi
           if [[ "$VERIFY_SUMMARY" != *"SKIPPED"* ]]; then
