@@ -209,3 +209,271 @@ jobs:
             exit 1
           fi
           echo "Zero-pack skip test passed."
+
+  # ── RCE REPLAY MODE TESTS ────────────────────────────────────────────────────
+
+  test-rce-replay-match:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Assay and build MATCH pack
+        run: |
+          pip install assay-ai
+          python scripts/build-rce-test-pack.py match rce-test-match
+
+      - name: Verify in rce_replay mode
+        id: verify
+        uses: ./
+        with:
+          pack-path: 'rce-test-match/'
+          verification-mode: 'rce_replay'
+          comment-on-pr: 'false'
+          upload-artifact: 'false'
+
+      - name: Assert MATCH outputs
+        shell: bash
+        env:
+          VERIFY_SUMMARY: ${{ steps.verify.outputs.summary }}
+        run: |
+          EXIT="${{ steps.verify.outputs.exit-code }}"
+          INTEGRITY="${{ steps.verify.outputs.integrity }}"
+          CLAIMS="${{ steps.verify.outputs.claims }}"
+          OUTCOME="${{ steps.verify.outcome }}"
+          echo "outcome=$OUTCOME exit-code=$EXIT integrity=$INTEGRITY claims=$CLAIMS"
+          if [ "$OUTCOME" != "success" ]; then
+            echo "::error::Expected success but outcome was: $OUTCOME"
+            exit 1
+          fi
+          if [ "$EXIT" != "0" ]; then
+            echo "::error::Expected exit-code=0 but got: $EXIT"
+            exit 1
+          fi
+          if [ "$INTEGRITY" != "PASS" ]; then
+            echo "::error::Expected integrity=PASS but got: $INTEGRITY"
+            exit 1
+          fi
+          if [ "$CLAIMS" != "PASS" ]; then
+            echo "::error::Expected claims=PASS but got: $CLAIMS"
+            exit 1
+          fi
+          if [[ "$VERIFY_SUMMARY" != *"MATCH"* ]]; then
+            echo "::error::Expected MATCH in summary"
+            echo "$VERIFY_SUMMARY"
+            exit 1
+          fi
+          if [[ "$VERIFY_SUMMARY" != *"RCE replay"* ]]; then
+            echo "::error::Expected mode line 'RCE replay' in summary"
+            echo "$VERIFY_SUMMARY"
+            exit 1
+          fi
+          echo "RCE replay MATCH test passed."
+
+  test-rce-replay-diverge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Assay and build DIVERGE pack
+        run: |
+          pip install assay-ai
+          python scripts/build-rce-test-pack.py diverge rce-test-diverge
+
+      - name: Verify in rce_replay mode (expect failure)
+        id: verify
+        continue-on-error: true
+        uses: ./
+        with:
+          pack-path: 'rce-test-diverge/'
+          verification-mode: 'rce_replay'
+          comment-on-pr: 'false'
+          upload-artifact: 'false'
+
+      - name: Assert DIVERGE outputs
+        shell: bash
+        env:
+          VERIFY_SUMMARY: ${{ steps.verify.outputs.summary }}
+        run: |
+          EXIT="${{ steps.verify.outputs.exit-code }}"
+          INTEGRITY="${{ steps.verify.outputs.integrity }}"
+          CLAIMS="${{ steps.verify.outputs.claims }}"
+          OUTCOME="${{ steps.verify.outcome }}"
+          echo "outcome=$OUTCOME exit-code=$EXIT integrity=$INTEGRITY claims=$CLAIMS"
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "::error::Expected failure but outcome was: $OUTCOME"
+            exit 1
+          fi
+          if [ "$EXIT" != "1" ]; then
+            echo "::error::Expected exit-code=1 but got: $EXIT"
+            exit 1
+          fi
+          if [ "$INTEGRITY" != "PASS" ]; then
+            echo "::error::Expected integrity=PASS but got: $INTEGRITY"
+            exit 1
+          fi
+          if [ "$CLAIMS" != "FAIL" ]; then
+            echo "::error::Expected claims=FAIL but got: $CLAIMS"
+            exit 1
+          fi
+          if [[ "$VERIFY_SUMMARY" != *"DIVERGE"* ]]; then
+            echo "::error::Expected DIVERGE in summary"
+            echo "$VERIFY_SUMMARY"
+            exit 1
+          fi
+          echo "RCE replay DIVERGE test passed."
+
+  test-rce-replay-integrity-fail:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Assay and build tampered pack
+        run: |
+          pip install assay-ai
+          python scripts/build-rce-test-pack.py tampered rce-test-tampered
+
+      - name: Verify in rce_replay mode (expect failure)
+        id: verify
+        continue-on-error: true
+        uses: ./
+        with:
+          pack-path: 'rce-test-tampered/'
+          verification-mode: 'rce_replay'
+          comment-on-pr: 'false'
+          upload-artifact: 'false'
+
+      - name: Assert INTEGRITY_FAIL outputs
+        shell: bash
+        env:
+          VERIFY_SUMMARY: ${{ steps.verify.outputs.summary }}
+        run: |
+          EXIT="${{ steps.verify.outputs.exit-code }}"
+          INTEGRITY="${{ steps.verify.outputs.integrity }}"
+          OUTCOME="${{ steps.verify.outcome }}"
+          echo "outcome=$OUTCOME exit-code=$EXIT integrity=$INTEGRITY"
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "::error::Expected failure but outcome was: $OUTCOME"
+            exit 1
+          fi
+          if [ "$EXIT" != "2" ]; then
+            echo "::error::Expected exit-code=2 but got: $EXIT"
+            exit 1
+          fi
+          if [ "$INTEGRITY" != "FAIL" ]; then
+            echo "::error::Expected integrity=FAIL but got: $INTEGRITY"
+            exit 1
+          fi
+          if [[ "$VERIFY_SUMMARY" != *"INTEGRITY FAIL"* ]]; then
+            echo "::error::Expected INTEGRITY FAIL in summary"
+            echo "$VERIFY_SUMMARY"
+            exit 1
+          fi
+          echo "RCE replay INTEGRITY_FAIL test passed."
+
+  test-rce-rejected-inputs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Assay
+        run: pip install assay-ai
+
+      - name: Verify with rejected input in rce_replay mode (expect failure)
+        id: verify
+        continue-on-error: true
+        uses: ./
+        with:
+          pack-path: 'proof_pack_*/'
+          verification-mode: 'rce_replay'
+          require-claim-pass: 'false'
+          comment-on-pr: 'false'
+          upload-artifact: 'false'
+
+      - name: Assert config error triggers failure
+        shell: bash
+        run: |
+          OUTCOME="${{ steps.verify.outcome }}"
+          EXIT="${{ steps.verify.outputs.exit-code }}"
+          echo "outcome=$OUTCOME exit-code=$EXIT"
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "::error::Expected failure for rejected input but outcome was: $OUTCOME"
+            exit 1
+          fi
+          if [ "$EXIT" != "2" ]; then
+            echo "::error::Expected exit-code=2 for config error but got: $EXIT"
+            exit 1
+          fi
+          echo "RCE rejected-inputs test passed."
+
+  test-rce-verifier-unavailable:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Assay with patched rce-verify stub
+        run: |
+          pip install assay-ai
+          # Temporarily shadow assay with a wrapper that fails rce-verify
+          mkdir -p "$HOME/.local/rce-stub-bin"
+          REAL_ASSAY=$(which assay)
+          cat > "$HOME/.local/rce-stub-bin/assay" << 'STUBEOF'
+          #!/usr/bin/env bash
+          if [ "$1" = "rce-verify" ]; then
+            echo "No such command 'rce-verify'" >&2
+            exit 127
+          fi
+          exec "$REAL_ASSAY" "$@"
+          STUBEOF
+          chmod +x "$HOME/.local/rce-stub-bin/assay"
+          echo "$HOME/.local/rce-stub-bin" >> "$GITHUB_PATH"
+
+      - name: Verify in rce_replay mode (expect fail-closed)
+        id: verify
+        continue-on-error: true
+        uses: ./
+        with:
+          pack-path: 'proof_pack_*/'
+          verification-mode: 'rce_replay'
+          comment-on-pr: 'false'
+          upload-artifact: 'false'
+
+      - name: Assert fail-closed on unavailable verifier
+        shell: bash
+        run: |
+          OUTCOME="${{ steps.verify.outcome }}"
+          EXIT="${{ steps.verify.outputs.exit-code }}"
+          echo "outcome=$OUTCOME exit-code=$EXIT"
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "::error::Expected fail-closed when rce-verify unavailable but outcome was: $OUTCOME"
+            exit 1
+          fi
+          if [ "$EXIT" != "2" ]; then
+            echo "::error::Expected exit-code=2 for unavailable verifier but got: $EXIT"
+            exit 1
+          fi
+          echo "RCE verifier-unavailable fail-closed test passed."
