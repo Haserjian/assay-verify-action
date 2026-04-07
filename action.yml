@@ -152,23 +152,7 @@ runs:
             exit 2
           fi
 
-          # 2. Probe for assay rce-verify
-          if ! assay rce-verify --help >/dev/null 2>&1; then
-            echo "::error::assay rce-verify is not available in the installed assay-ai version. Replay mode requires an assay-ai release that includes rce-verify. Fail closed."
-            echo "integrity=FAIL" >> "$GITHUB_OUTPUT"
-            echo "claims=N/A" >> "$GITHUB_OUTPUT"
-            echo "exit_code=2" >> "$GITHUB_OUTPUT"
-            echo "pack_count=0" >> "$GITHUB_OUTPUT"
-            _PROBE_SUMMARY="### Assay Verification\n\n**Mode: RCE replay (\`recorded_trace\`, Tier A)**\n\n**Result: INTEGRITY FAIL** -- assay rce-verify is not available\n"
-            echo -e "$_PROBE_SUMMARY" >> "$GITHUB_STEP_SUMMARY"
-            EOF_MARKER="ASSAY_SUMMARY_EOF_$(date +%s)"
-            echo "summary<<${EOF_MARKER}" >> "$GITHUB_OUTPUT"
-            echo -e "$_PROBE_SUMMARY" >> "$GITHUB_OUTPUT"
-            echo "${EOF_MARKER}" >> "$GITHUB_OUTPUT"
-            exit 2
-          fi
-
-          # 3. Pack discovery -- same glob, filter to directories
+          # 2. Pack discovery -- same glob, filter to directories
           shopt -s nullglob
           ALL_MATCHES=($INPUT_PACK_PATH)
           shopt -u nullglob
@@ -212,6 +196,22 @@ runs:
               exit 0
             fi
             _replay_write_zero_pack_fail "No replay roots matched: $INPUT_PACK_PATH"
+            exit 2
+          fi
+
+          # 3. Probe for assay rce-verify
+          if ! assay rce-verify --help >/dev/null 2>&1; then
+            echo "::error::assay rce-verify is not available in the installed assay-ai version. Replay mode requires an assay-ai release that includes rce-verify. Fail closed."
+            echo "integrity=FAIL" >> "$GITHUB_OUTPUT"
+            echo "claims=N/A" >> "$GITHUB_OUTPUT"
+            echo "exit_code=2" >> "$GITHUB_OUTPUT"
+            echo "pack_count=0" >> "$GITHUB_OUTPUT"
+            _PROBE_SUMMARY="### Assay Verification\n\n**Mode: RCE replay (\`recorded_trace\`, Tier A)**\n\n**Result: INTEGRITY FAIL** -- assay rce-verify is not available\n"
+            echo -e "$_PROBE_SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+            EOF_MARKER="ASSAY_SUMMARY_EOF_$(date +%s)"
+            echo "summary<<${EOF_MARKER}" >> "$GITHUB_OUTPUT"
+            echo -e "$_PROBE_SUMMARY" >> "$GITHUB_OUTPUT"
+            echo "${EOF_MARKER}" >> "$GITHUB_OUTPUT"
             exit 2
           fi
 
