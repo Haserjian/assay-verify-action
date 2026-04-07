@@ -455,23 +455,23 @@ jobs:
       - name: Install Assay and build rce-verify stub
         run: |
           pip install assay-ai
-          # Shadow assay with a wrapper that fails rce-verify to prove fail-closed.
-          # Use printf to embed the resolved real-assay path at write time so the
-          # fallback exec is not a broken reference inside a single-quoted heredoc.
+          # Overwrite the installed assay entrypoint with a stub that fails rce-verify.
+          # Direct path replacement ensures the stub survives the composite action's
+          # own pip install step — pip skips reinstall when same version is already
+          # present, so the entrypoint file is not touched.
           REAL_ASSAY=$(which assay)
-          mkdir -p "$HOME/.local/rce-stub-bin"
+          cp "$REAL_ASSAY" "${REAL_ASSAY}.real"
           {
             printf '%s\n' '#!/usr/bin/env bash'
             printf '%s\n' 'if [ "$1" = "rce-verify" ]; then'
             printf '%s\n' '  echo "rce-verify is not available in this stub" >&2'
             printf '%s\n' '  exit 127'
             printf '%s\n' 'fi'
-            printf 'exec "%s" "$@"\n' "$REAL_ASSAY"
-          } > "$HOME/.local/rce-stub-bin/assay"
-          chmod +x "$HOME/.local/rce-stub-bin/assay"
-          # Verify the resolved path is embedded correctly before we continue
-          grep -q "$REAL_ASSAY" "$HOME/.local/rce-stub-bin/assay"
-          echo "$HOME/.local/rce-stub-bin" >> "$GITHUB_PATH"
+            printf 'exec "%s.real" "$@"\n' "$REAL_ASSAY"
+          } > "$REAL_ASSAY"
+          chmod +x "$REAL_ASSAY"
+          # Sanity: stub must be the active binary and must contain the sentinel
+          grep -q "rce-verify is not available" "$REAL_ASSAY"
 
       - name: Verify in rce_replay mode (expect fail-closed)
         id: verify
