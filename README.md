@@ -230,3 +230,4 @@ Assay is a flight recorder, not a safety certificate.
 - [assay-ai on PyPI](https://pypi.org/project/assay-ai/)
 - [Quickstart docs](https://github.com/Haserjian/assay/blob/main/docs/README_quickstart.md)
 - [Assay source](https://github.com/Haserjian/assay)
+- [OpenClaw integration](https://github.com/Haserjian/assay/blob/main/docs/openclaw-support.md) — a bounded adapter and proof-pack flow for the OpenClaw agent runtime (`assay try-openclaw`)
