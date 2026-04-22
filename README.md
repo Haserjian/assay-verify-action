@@ -4,6 +4,16 @@ Verify AI evidence bundles in CI and surface the result directly on pull request
 
 Use this action when your workflow already produces Assay proof packs and you want GitHub to verify them automatically. It checks pack integrity and behavioral claims, then posts the verdict where reviewers see it.
 
+## Where this fits
+
+This action is one rung of the Assay adoption ladder:
+
+1. **[Scorecard](https://haserjian.github.io/assay-scorecard/)** — is your repo's LLM-call evidence independently verifiable today?
+2. **[Proof Gallery](https://haserjian.github.io/assay-proof-gallery/)** — see what a PASS, HONEST_FAIL, and TAMPERED pack look like in the browser (no install).
+3. **[Assay CLI](https://github.com/Haserjian/assay)** — `pipx install assay-ai && assay demo-challenge`.
+4. **This action** — gate your PRs on signed proof packs.
+5. **[AgentMesh proof-carrying PR pilot](https://github.com/Haserjian/agentmesh/tree/main/docs/pilot)** — run 3–5 real PRs through the gate with lineage, evidence score, and verification.
+
 ## What it looks like
 
 On every PR, you get a comment like:
