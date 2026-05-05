@@ -1,0 +1,47 @@
+{
+  "receipt_type": "jurisdiction_loss",
+  "algorithm_version": "epistemic-jurisdiction-v0.1",
+  "hypothesis_id": "H_self_seal",
+  "previous_status": "active",
+  "previous_proof_tier": "candidate_invariant",
+  "routing_decision": "archive_hard",
+  "failure_shape": {
+    "constraint_power": -0.02,
+    "generalization_stability": 0.2,
+    "zoo_index": 0.4,
+    "self_explanation_pressure": 0.95,
+    "explanation_debt": 24.0,
+    "model_complexity": 11.0,
+    "temporal_coherence": 0.3
+  },
+  "intervention_elasticities": {
+    "parameter": 0.2,
+    "factorization": 0.3,
+    "representation": 0.4
+  },
+  "thresholds": {
+    "min_elasticity": 0.05,
+    "self_sealing_threshold": 0.8
+  },
+  "selected_intervention": "archive_hard",
+  "selected_elasticity": null,
+  "candidate_elasticities": {
+    "refine": 0.2,
+    "factorize": 0.3,
+    "replace_frame": 0.4
+  },
+  "tie_breaker": null,
+  "probe_receipt_refs": ["probe_self_seal_001"],
+  "decision_rule": "self_explanation_pressure cleared threshold while constraint_power was non-positive",
+  "preserved_residual_signal": "The hypothesis still names a historical failure mode but cannot govern.",
+  "counterexamples": [],
+  "new_permissions": {
+    "can_govern": false,
+    "can_suggest": true,
+    "can_gather_evidence": false,
+    "requires_followup_receipts": false,
+    "requires_child_receipts": false,
+    "requires_new_receipts_for_reactivation": true,
+    "authority_scope": "ghost_signal_only"
+  }
+}

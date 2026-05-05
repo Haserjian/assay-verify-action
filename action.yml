@@ -59,6 +59,10 @@ inputs:
     description: 'Subdirectory for replay results written inside each matched replay root'
     required: false
     default: 'replay_results'
+  jurisdiction-receipt-path:
+    description: 'Optional path or glob for Guardian jurisdiction receipt JSON files to validate as an explicit CI check'
+    required: false
+    default: ''
 
 outputs:
   integrity:
@@ -121,6 +125,7 @@ runs:
         INPUT_ENFORCE_TRUST: ${{ inputs.enforce-trust }}
         INPUT_VERIFICATION_MODE: ${{ inputs.verification-mode }}
         INPUT_REPLAY_OUTPUT_DIR: ${{ inputs.replay-output-dir }}
+        INPUT_JURISDICTION_RECEIPT_PATH: ${{ inputs.jurisdiction-receipt-path }}
         ACTION_PATH: ${{ github.action_path }}
       run: |
         set +e
@@ -158,6 +163,44 @@ runs:
               echo "$_CURRENT_JSON"
             fi
         }
+
+        _write_jurisdiction_validation_failure() {
+          local _MSG="$1"
+          local _SUMMARY="### Assay Verification\n\n**Result: INTEGRITY FAIL** -- Guardian jurisdiction receipt validation failed\n\n${_MSG}\n"
+          echo "::error::$_MSG"
+          echo "integrity=FAIL" >> "$GITHUB_OUTPUT"
+          echo "claims=N/A" >> "$GITHUB_OUTPUT"
+          echo "exit_code=2" >> "$GITHUB_OUTPUT"
+          echo "pack_count=0" >> "$GITHUB_OUTPUT"
+          _write_replay_outputs "not_requested" "N/A" "0" "[]"
+          echo -e "$_SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+          EOF_MARKER="ASSAY_SUMMARY_EOF_$(date +%s)"
+          echo "summary<<${EOF_MARKER}" >> "$GITHUB_OUTPUT"
+          echo -e "$_SUMMARY" >> "$GITHUB_OUTPUT"
+          echo "${EOF_MARKER}" >> "$GITHUB_OUTPUT"
+        }
+
+        # Explicit Guardian jurisdiction receipt CI check. This is separate from
+        # proof-pack verification and only runs when a receipt path is provided.
+        if [ -n "$INPUT_JURISDICTION_RECEIPT_PATH" ]; then
+          shopt -s nullglob
+          JURISDICTION_RECEIPTS=($INPUT_JURISDICTION_RECEIPT_PATH)
+          shopt -u nullglob
+
+          if [ ${#JURISDICTION_RECEIPTS[@]} -eq 0 ]; then
+            _write_jurisdiction_validation_failure "No Guardian jurisdiction receipts matched: $INPUT_JURISDICTION_RECEIPT_PATH"
+            exit 2
+          fi
+
+          node "$ACTION_PATH/scripts/validate-jurisdiction-receipts.mjs" "${JURISDICTION_RECEIPTS[@]}"
+          JURISDICTION_RC=$?
+          if [ $JURISDICTION_RC -ne 0 ]; then
+            _write_jurisdiction_validation_failure "One or more Guardian jurisdiction receipts failed validation."
+            exit 2
+          fi
+
+          echo "::notice::Validated ${#JURISDICTION_RECEIPTS[@]} Guardian jurisdiction receipt file(s)."
+        fi
 
         # ── RCE REPLAY MODE ─────────────────────────────────────────────────────
         if [ "$INPUT_VERIFICATION_MODE" = "rce_replay" ]; then
