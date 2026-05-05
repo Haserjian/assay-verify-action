@@ -112,8 +112,27 @@ These outputs are always populated. In normal proof-pack mode the replay surface
 | `trust-target` | | Trust evaluation target (`local_verify`, `ci_gate`, `publication`). Advisory unless `enforce-trust` is set. |
 | `trust-policy-dir` | | Directory containing `signers.yaml` and `acceptance.yaml` |
 | `enforce-trust` | `false` | When `true`, fail the step if trust acceptance is `reject` for the given target. Requires clean policy load. |
+| `jurisdiction-receipt-path` | | Optional path or glob for Guardian jurisdiction receipt JSON files to validate as an explicit CI check |
 | `assay-version` | latest | Specific `assay-ai` version to install |
 | `python-version` | `3.11` | Python version to use |
+
+## Guardian jurisdiction receipts
+
+Use `jurisdiction-receipt-path` when a workflow should validate Guardian
+`jurisdiction_loss` receipts directly. This check is explicit: it runs only when
+the input is provided and does not change normal proof-pack verification.
+
+```yaml
+- uses: Haserjian/assay-verify-action@v1
+  with:
+    jurisdiction-receipt-path: 'guardian_receipts/*.json'
+    require-pack: 'false'
+    upload-artifact: 'false'
+```
+
+Malformed jurisdiction receipts fail with integrity exit code `2`. Valid
+receipts validate the public Assay receipt contract; the action does not import
+or execute Loom runtime code.
 
 ## Trust evaluation
 
