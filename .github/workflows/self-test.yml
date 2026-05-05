@@ -230,6 +230,84 @@ jobs:
           fi
           echo "Zero-pack skip test passed."
 
+  test-jurisdiction-receipt-valid:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify explicit Guardian jurisdiction receipt
+        id: verify
+        uses: ./
+        with:
+          jurisdiction-receipt-path: 'tests/fixtures/jurisdiction_receipts/valid-factorize.json'
+          require-pack: 'false'
+          comment-on-pr: 'false'
+          upload-artifact: 'false'
+
+      - name: Assert valid jurisdiction receipt path passes
+        shell: bash
+        run: |
+          OUTCOME="${{ steps.verify.outcome }}"
+          EXIT="${{ steps.verify.outputs.exit-code }}"
+          PACK_COUNT="${{ steps.verify.outputs.pack-count }}"
+          echo "outcome=$OUTCOME exit-code=$EXIT pack-count=$PACK_COUNT"
+          if [ "$OUTCOME" != "success" ]; then
+            echo "::error::Expected valid jurisdiction receipt to succeed but outcome was: $OUTCOME"
+            exit 1
+          fi
+          if [ "$EXIT" != "0" ]; then
+            echo "::error::Expected exit-code=0 for valid jurisdiction receipt but got: $EXIT"
+            exit 1
+          fi
+          if [ "$PACK_COUNT" != "0" ]; then
+            echo "::error::Expected pack-count=0 for explicit receipt-only validation but got: $PACK_COUNT"
+            exit 1
+          fi
+          echo "Guardian jurisdiction receipt valid-path test passed."
+
+  test-jurisdiction-receipt-invalid:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify invalid Guardian jurisdiction receipt
+        id: verify
+        uses: ./
+        continue-on-error: true
+        with:
+          jurisdiction-receipt-path: 'tests/fixtures/jurisdiction_receipts/invalid-factorize-without-child-receipts.json'
+          require-pack: 'false'
+          comment-on-pr: 'false'
+          upload-artifact: 'false'
+
+      - name: Assert invalid jurisdiction receipt path fails
+        shell: bash
+        env:
+          VERIFY_SUMMARY: ${{ steps.verify.outputs.summary }}
+        run: |
+          OUTCOME="${{ steps.verify.outcome }}"
+          EXIT="${{ steps.verify.outputs.exit-code }}"
+          PACK_COUNT="${{ steps.verify.outputs.pack-count }}"
+          echo "outcome=$OUTCOME exit-code=$EXIT pack-count=$PACK_COUNT"
+          if [ "$OUTCOME" != "failure" ]; then
+            echo "::error::Expected invalid jurisdiction receipt to fail but outcome was: $OUTCOME"
+            exit 1
+          fi
+          if [ "$EXIT" != "2" ]; then
+            echo "::error::Expected exit-code=2 for invalid jurisdiction receipt but got: $EXIT"
+            exit 1
+          fi
+          if [ "$PACK_COUNT" != "0" ]; then
+            echo "::error::Expected pack-count=0 for failed receipt-only validation but got: $PACK_COUNT"
+            exit 1
+          fi
+          if [[ "$VERIFY_SUMMARY" != *"Guardian jurisdiction receipt validation failed"* ]]; then
+            echo "::error::Expected jurisdiction validation failure summary"
+            echo "$VERIFY_SUMMARY"
+            exit 1
+          fi
+          echo "Guardian jurisdiction receipt invalid-path test passed."
+
   # ── RCE REPLAY MODE TESTS ────────────────────────────────────────────────────
 
   test-rce-replay-match:
