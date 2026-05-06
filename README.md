@@ -189,6 +189,16 @@ identity or signed lineage. If you are working in a public repo or a
 mixed-sensitivity environment, consider setting `upload-artifact: false` and
 managing evidence artifacts through a controlled channel instead.
 
+After downloading an uploaded proof-pack artifact, verify the pack itself rather
+than trusting the artifact container:
+
+```bash
+assay verify-pack ./proof_pack_*/ --lock ./assay.lock --require-claim-pass
+```
+
+The GitHub artifact proves only that CI uploaded files. The Assay command checks
+the signed proof-pack bytes, declared claims, and pinned signer policy.
+
 ## Outputs
 
 | Output | Description |
