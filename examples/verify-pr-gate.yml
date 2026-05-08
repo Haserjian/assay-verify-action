@@ -19,6 +19,7 @@ jobs:
         id: assay
         uses: Haserjian/assay-verify-action@v1
         with:
+          assay-version: "1.23.0"
           pack-path: "proof_pack_*/"
           require-claim-pass: "true"
 

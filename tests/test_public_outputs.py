@@ -57,6 +57,7 @@ def test_pr_gate_example_writes_explicit_report_artifact():
     example = EXAMPLE_GATE.read_text(encoding="utf-8")
 
     assert "--out verify_report.json" in example
+    assert 'assay-version: "1.23.0"' in example
     assert "verify_report.stdout.json" in example
     assert "cosign sign-blob" in example
     assert "--bundle verify_report.sigstore.json" in example
