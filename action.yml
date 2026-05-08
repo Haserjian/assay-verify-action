@@ -77,18 +77,39 @@ outputs:
   pack-count:
     description: 'Number of packs verified'
     value: ${{ steps.verify.outputs.pack_count }}
+  pack-root-sha256:
+    description: 'Comma-separated pack_root_sha256 values for verified packs'
+    value: ${{ steps.verify.outputs.pack_root_sha256 }}
+  integrity-verdict:
+    description: 'Aggregate integrity verdict: PASS or TAMPERED'
+    value: ${{ steps.verify.outputs.integrity_verdict }}
+  claim-verdict:
+    description: 'Aggregate claim verdict: PASS, HONEST_FAIL, or NOT_EVALUATED'
+    value: ${{ steps.verify.outputs.claim_verdict }}
   replay-state:
     description: 'Machine-readable replay execution state'
     value: ${{ steps.verify.outputs.replay_state }}
   replay-verdict:
     description: 'Aggregate replay verdict: MATCH, DIVERGE, INTEGRITY_FAIL, or N/A'
     value: ${{ steps.verify.outputs.replay_verdict }}
+  public-replay-verdict:
+    description: 'Public verify_report replay verdict: MATCH, DIVERGE, or NOT_RUN'
+    value: ${{ steps.verify.outputs.public_replay_verdict }}
   replay-roots-matched:
     description: 'Number of replay roots matched during discovery'
     value: ${{ steps.verify.outputs.replay_roots_matched }}
   replay-results-json:
     description: 'Machine-readable per-root replay results as compact JSON'
     value: ${{ steps.verify.outputs.replay_results_json }}
+  trust-verdict:
+    description: 'Aggregate trust verdict: PASS, UNTRUSTED, or NOT_EVALUATED'
+    value: ${{ steps.verify.outputs.trust_verdict }}
+  overall-verdict:
+    description: 'Aggregate public verdict: PASS, HONEST_FAIL, TAMPERED, UNTRUSTED, or REPLAY_DIVERGED'
+    value: ${{ steps.verify.outputs.overall_verdict }}
+  verify-report-json:
+    description: 'Compact JSON array of per-pack public verify report rows'
+    value: ${{ steps.verify.outputs.verify_report_json }}
   summary:
     description: 'Markdown summary of verification results'
     value: ${{ steps.verify.outputs.summary }}
@@ -148,6 +169,39 @@ runs:
           echo "replay_verdict=${_VERDICT}" >> "$GITHUB_OUTPUT"
           echo "replay_roots_matched=${_ROOTS}" >> "$GITHUB_OUTPUT"
           _write_multiline_output "replay_results_json" "$_RESULTS_JSON"
+        }
+
+        _write_public_outputs() {
+          local _PACK_ROOTS="${1:-}"
+          local _INTEGRITY_VERDICT="${2:-TAMPERED}"
+          local _CLAIM_VERDICT="${3:-NOT_EVALUATED}"
+          local _TRUST_VERDICT="${4:-NOT_EVALUATED}"
+          local _OVERALL_VERDICT="${5:-TAMPERED}"
+          local _VERIFY_REPORT_JSON="${6:-[]}"
+          local _PUBLIC_REPLAY_VERDICT="${7:-NOT_RUN}"
+          echo "pack_root_sha256=${_PACK_ROOTS}" >> "$GITHUB_OUTPUT"
+          echo "integrity_verdict=${_INTEGRITY_VERDICT}" >> "$GITHUB_OUTPUT"
+          echo "claim_verdict=${_CLAIM_VERDICT}" >> "$GITHUB_OUTPUT"
+          echo "public_replay_verdict=${_PUBLIC_REPLAY_VERDICT}" >> "$GITHUB_OUTPUT"
+          echo "trust_verdict=${_TRUST_VERDICT}" >> "$GITHUB_OUTPUT"
+          echo "overall_verdict=${_OVERALL_VERDICT}" >> "$GITHUB_OUTPUT"
+          _write_multiline_output "verify_report_json" "$_VERIFY_REPORT_JSON"
+        }
+
+        _append_verify_report_row() {
+          local _CURRENT_JSON="$1"
+          local _PACK_NAME="$2"
+          local _PACK_ROOT="$3"
+          local _INTEGRITY_VERDICT="$4"
+          local _CLAIM_VERDICT="$5"
+          local _REPLAY_VERDICT="$6"
+          local _TRUST_VERDICT="$7"
+          local _OVERALL_VERDICT="$8"
+          python3 -c 'import json, sys; rows = json.loads(sys.argv[1]); rows.append({"pack": sys.argv[2], "pack_root_sha256": sys.argv[3], "integrity_verdict": sys.argv[4], "claim_verdict": sys.argv[5], "replay_verdict": sys.argv[6], "trust_verdict": sys.argv[7], "overall_verdict": sys.argv[8]}); print(json.dumps(rows, separators=(",", ":")))' \
+            "$_CURRENT_JSON" "$_PACK_NAME" "$_PACK_ROOT" "$_INTEGRITY_VERDICT" "$_CLAIM_VERDICT" "$_REPLAY_VERDICT" "$_TRUST_VERDICT" "$_OVERALL_VERDICT" 2>/dev/null
+          if [ $? -ne 0 ]; then
+            echo "$_CURRENT_JSON"
+          fi
         }
 
         _append_replay_result() {
@@ -233,6 +287,7 @@ runs:
             echo "claims=N/A" >> "$GITHUB_OUTPUT"
             echo "exit_code=2" >> "$GITHUB_OUTPUT"
             echo "pack_count=0" >> "$GITHUB_OUTPUT"
+            _write_public_outputs "" "TAMPERED" "NOT_EVALUATED" "NOT_EVALUATED" "TAMPERED" "[]"
             _write_replay_outputs "configuration_rejected" "INTEGRITY_FAIL" "0" "[]"
             echo -e "$_GUARD_SUMMARY" >> "$GITHUB_STEP_SUMMARY"
             EOF_MARKER="ASSAY_SUMMARY_EOF_$(date +%s)"
@@ -257,6 +312,7 @@ runs:
             echo "claims=N/A" >> "$GITHUB_OUTPUT"
             echo "exit_code=0" >> "$GITHUB_OUTPUT"
             echo "pack_count=0" >> "$GITHUB_OUTPUT"
+            _write_public_outputs "" "PASS" "NOT_EVALUATED" "NOT_EVALUATED" "PASS" "[]"
             _write_replay_outputs "skipped_no_roots" "N/A" "0" "[]"
             echo -e "$_SKIP_SUMMARY" >> "$GITHUB_STEP_SUMMARY"
             EOF_MARKER="ASSAY_SUMMARY_EOF_$(date +%s)"
@@ -273,6 +329,7 @@ runs:
             echo "claims=N/A" >> "$GITHUB_OUTPUT"
             echo "exit_code=2" >> "$GITHUB_OUTPUT"
             echo "pack_count=0" >> "$GITHUB_OUTPUT"
+            _write_public_outputs "" "TAMPERED" "NOT_EVALUATED" "NOT_EVALUATED" "TAMPERED" "[]"
             _write_replay_outputs "zero_roots_required" "INTEGRITY_FAIL" "0" "[]"
             echo -e "$_FAIL_SUMMARY" >> "$GITHUB_STEP_SUMMARY"
             EOF_MARKER="ASSAY_SUMMARY_EOF_$(date +%s)"
@@ -298,6 +355,7 @@ runs:
             echo "claims=N/A" >> "$GITHUB_OUTPUT"
             echo "exit_code=2" >> "$GITHUB_OUTPUT"
             echo "pack_count=0" >> "$GITHUB_OUTPUT"
+            _write_public_outputs "" "TAMPERED" "NOT_EVALUATED" "NOT_EVALUATED" "TAMPERED" "[]"
             _write_replay_outputs "verifier_unavailable" "INTEGRITY_FAIL" "${#REPLAY_ROOTS[@]}" "[]"
             _PROBE_SUMMARY="### Assay Verification\n\n**Mode: RCE replay (\`recorded_trace\`, Tier A)**\n\n**Result: INTEGRITY FAIL** -- assay rce-verify is not available\n"
             echo -e "$_PROBE_SUMMARY" >> "$GITHUB_STEP_SUMMARY"
@@ -406,6 +464,13 @@ runs:
           echo "claims=$CLAIMS_ALL" >> "$GITHUB_OUTPUT"
           echo "exit_code=$WORST_EXIT" >> "$GITHUB_OUTPUT"
           echo "pack_count=$PACK_COUNT" >> "$GITHUB_OUTPUT"
+          if [ "$WORST_EXIT" -eq 0 ]; then
+            _write_public_outputs "" "PASS" "NOT_EVALUATED" "NOT_EVALUATED" "PASS" "[]"
+          elif [ "$WORST_EXIT" -eq 1 ]; then
+            _write_public_outputs "" "PASS" "NOT_EVALUATED" "NOT_EVALUATED" "REPLAY_DIVERGED" "[]"
+          else
+            _write_public_outputs "" "TAMPERED" "NOT_EVALUATED" "NOT_EVALUATED" "TAMPERED" "[]"
+          fi
           _write_replay_outputs "completed" "$REPLAY_OVERALL_VERDICT" "$PACK_COUNT" "$REPLAY_RESULTS_JSON"
 
           FULL_SUMMARY="### Assay Verification\n\n**Mode: RCE replay (\`recorded_trace\`, Tier A)**\n\n"
@@ -439,6 +504,13 @@ runs:
         INTEGRITY_ALL="PASS"
         CLAIMS_ALL="PASS"
         HAS_SHADOW_MODE=0
+        PACK_ROOT_SHA256=""
+        VERIFY_REPORT_JSON="[]"
+        INTEGRITY_VERDICT_ALL="PASS"
+        CLAIM_VERDICT_ALL="NOT_EVALUATED"
+        PUBLIC_REPLAY_VERDICT_ALL="NOT_RUN"
+        TRUST_VERDICT_ALL="NOT_EVALUATED"
+        OVERALL_VERDICT_ALL="PASS"
 
         shopt -s nullglob
         PACK_GLOB="$INPUT_PACK_PATH"
@@ -453,6 +525,7 @@ runs:
             echo "claims=N/A" >> "$GITHUB_OUTPUT"
             echo "exit_code=0" >> "$GITHUB_OUTPUT"
             echo "pack_count=0" >> "$GITHUB_OUTPUT"
+            _write_public_outputs "" "PASS" "NOT_EVALUATED" "NOT_EVALUATED" "PASS" "[]"
             _write_replay_outputs "not_requested" "N/A" "0" "[]"
             EOF_MARKER="ASSAY_SUMMARY_EOF_$(date +%s)"
             echo "summary<<${EOF_MARKER}" >> "$GITHUB_OUTPUT"
@@ -486,6 +559,7 @@ runs:
           echo "claims=N/A" >> "$GITHUB_OUTPUT"
           echo "exit_code=2" >> "$GITHUB_OUTPUT"
           echo "pack_count=0" >> "$GITHUB_OUTPUT"
+          _write_public_outputs "" "TAMPERED" "NOT_EVALUATED" "NOT_EVALUATED" "TAMPERED" "[]"
           _write_replay_outputs "not_requested" "N/A" "0" "[]"
           EOF_MARKER="ASSAY_SUMMARY_EOF_$(date +%s)"
           echo "summary<<${EOF_MARKER}" >> "$GITHUB_OUTPUT"
@@ -519,6 +593,23 @@ runs:
           OUTPUT=$($VERIFY_CMD 2>&1)
           EXIT_CODE=$?
 
+          # Capture the public verify_report contract when supported by the
+          # installed assay-ai version. Fall back to the pack's in-band report.
+          VERIFY_JSON_CMD="assay verify-pack $PACK_DIR --json"
+          if [ "$INPUT_REQUIRE_CLAIM_PASS" = "true" ]; then
+            VERIFY_JSON_CMD="$VERIFY_JSON_CMD --require-claim-pass"
+          fi
+          if [ -n "$INPUT_LOCK_FILE" ]; then
+            VERIFY_JSON_CMD="$VERIFY_JSON_CMD --lock $INPUT_LOCK_FILE"
+          fi
+          if [ -n "$INPUT_TRUST_TARGET" ]; then
+            VERIFY_JSON_CMD="$VERIFY_JSON_CMD --trust-target $INPUT_TRUST_TARGET"
+            if [ -n "$INPUT_TRUST_POLICY_DIR" ]; then
+              VERIFY_JSON_CMD="$VERIFY_JSON_CMD --trust-policy-dir $INPUT_TRUST_POLICY_DIR"
+            fi
+          fi
+          VERIFY_JSON=$($VERIFY_JSON_CMD 2>/dev/null || true)
+
           # Run trust evaluation if requested (--json mode, advisory only)
           if [ -n "$INPUT_TRUST_TARGET" ]; then
             TRUST_CMD="assay verify-pack $PACK_DIR --json --trust-target $INPUT_TRUST_TARGET"
@@ -540,8 +631,8 @@ runs:
           # errors, warnings, head_hash. Claims are in claim_verification.passed.
           REPORT="$PACK_DIR/verify_report.json"
           if [ -f "$REPORT" ]; then
-            INTEGRITY=$(python3 -c "import json; d=json.load(open('$REPORT')); print('PASS' if d.get('passed', False) else 'FAIL')" 2>/dev/null || echo "UNKNOWN")
-            CLAIM_CHECK=$(python3 -c "import json; d=json.load(open('$REPORT')); cv=d.get('claim_verification'); print('N/A' if cv is None else ('PASS' if cv.get('passed', False) else 'FAIL'))" 2>/dev/null || echo "N/A")
+            INTEGRITY=$(python3 -c "import json; d=json.load(open('$REPORT')); print('PASS' if d.get('integrity_verdict') == 'PASS' or d.get('passed', False) else 'FAIL')" 2>/dev/null || echo "UNKNOWN")
+            CLAIM_CHECK=$(python3 -c "import json; d=json.load(open('$REPORT')); cv=d.get('claim_verdict'); legacy=d.get('claim_verification'); print('PASS' if cv == 'PASS' else ('FAIL' if cv == 'HONEST_FAIL' else ('N/A' if legacy is None else ('PASS' if legacy.get('passed', False) else 'FAIL'))))" 2>/dev/null || echo "N/A")
             RECEIPT_COUNT=$(python3 -c "import json; d=json.load(open('$REPORT')); print(d.get('receipt_count', '?'))" 2>/dev/null || echo "?")
           else
             INTEGRITY="UNKNOWN"
@@ -553,11 +644,58 @@ runs:
           MANIFEST="$PACK_DIR/pack_manifest.json"
           if [ -f "$MANIFEST" ]; then
             PACK_ID=$(python3 -c "import json; d=json.load(open('$MANIFEST')); print(d.get('attestation',{}).get('pack_id','?'))" 2>/dev/null || echo "?")
+            PACK_ROOT=$(python3 -c "import json; d=json.load(open('$MANIFEST')); print(d.get('pack_root_sha256',''))" 2>/dev/null || echo "")
             MODE=$(python3 -c "import json; d=json.load(open('$MANIFEST')); print(d.get('attestation',{}).get('mode','?'))" 2>/dev/null || echo "?")
           else
             PACK_ID="?"
+            PACK_ROOT=""
             MODE="?"
           fi
+
+          REPORT_PACK_ROOT=$(echo "$VERIFY_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('pack_root_sha256',''))" 2>/dev/null || echo "")
+          REPORT_INTEGRITY_VERDICT=$(echo "$VERIFY_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('integrity_verdict',''))" 2>/dev/null || echo "")
+          REPORT_CLAIM_VERDICT=$(echo "$VERIFY_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('claim_verdict',''))" 2>/dev/null || echo "")
+          REPORT_REPLAY_VERDICT=$(echo "$VERIFY_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('replay_verdict','NOT_RUN'))" 2>/dev/null || echo "NOT_RUN")
+          REPORT_TRUST_VERDICT=$(echo "$VERIFY_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('trust_verdict','NOT_EVALUATED'))" 2>/dev/null || echo "NOT_EVALUATED")
+          REPORT_OVERALL_VERDICT=$(echo "$VERIFY_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('overall_verdict',''))" 2>/dev/null || echo "")
+
+          if [ -z "$REPORT_PACK_ROOT" ]; then
+            REPORT_PACK_ROOT="$PACK_ROOT"
+          fi
+          if [ -z "$REPORT_INTEGRITY_VERDICT" ]; then
+            if [ "$INTEGRITY" = "PASS" ]; then REPORT_INTEGRITY_VERDICT="PASS"; else REPORT_INTEGRITY_VERDICT="TAMPERED"; fi
+          fi
+          if [ -z "$REPORT_CLAIM_VERDICT" ]; then
+            if [ "$CLAIM_CHECK" = "PASS" ]; then
+              REPORT_CLAIM_VERDICT="PASS"
+            elif [ "$CLAIM_CHECK" = "FAIL" ]; then
+              REPORT_CLAIM_VERDICT="HONEST_FAIL"
+            else
+              REPORT_CLAIM_VERDICT="NOT_EVALUATED"
+            fi
+          fi
+          if [ -z "$REPORT_OVERALL_VERDICT" ]; then
+            if [ "$REPORT_INTEGRITY_VERDICT" = "TAMPERED" ]; then
+              REPORT_OVERALL_VERDICT="TAMPERED"
+            elif [ "$REPORT_TRUST_VERDICT" = "UNTRUSTED" ]; then
+              REPORT_OVERALL_VERDICT="UNTRUSTED"
+            elif [ "$REPORT_REPLAY_VERDICT" = "DIVERGE" ]; then
+              REPORT_OVERALL_VERDICT="REPLAY_DIVERGED"
+            elif [ "$REPORT_CLAIM_VERDICT" = "HONEST_FAIL" ]; then
+              REPORT_OVERALL_VERDICT="HONEST_FAIL"
+            else
+              REPORT_OVERALL_VERDICT="PASS"
+            fi
+          fi
+
+          if [ -n "$REPORT_PACK_ROOT" ]; then
+            if [ -n "$PACK_ROOT_SHA256" ]; then
+              PACK_ROOT_SHA256="${PACK_ROOT_SHA256},${REPORT_PACK_ROOT}"
+            else
+              PACK_ROOT_SHA256="$REPORT_PACK_ROOT"
+            fi
+          fi
+          VERIFY_REPORT_JSON=$(_append_verify_report_row "$VERIFY_REPORT_JSON" "$PACK_NAME" "$REPORT_PACK_ROOT" "$REPORT_INTEGRITY_VERDICT" "$REPORT_CLAIM_VERDICT" "$REPORT_REPLAY_VERDICT" "$REPORT_TRUST_VERDICT" "$REPORT_OVERALL_VERDICT")
           MODE_LC=$(echo "$MODE" | tr '[:upper:]' '[:lower:]')
           MODE_LABEL="$MODE"
           if [ "$MODE_LC" = "shadow" ]; then
@@ -570,6 +708,33 @@ runs:
           fi
           if [ "$CLAIM_CHECK" = "FAIL" ]; then
             CLAIMS_ALL="FAIL"
+          fi
+          if [ "$REPORT_INTEGRITY_VERDICT" = "TAMPERED" ]; then
+            INTEGRITY_VERDICT_ALL="TAMPERED"
+          fi
+          if [ "$REPORT_CLAIM_VERDICT" = "HONEST_FAIL" ]; then
+            CLAIM_VERDICT_ALL="HONEST_FAIL"
+          elif [ "$REPORT_CLAIM_VERDICT" = "PASS" ] && [ "$CLAIM_VERDICT_ALL" != "HONEST_FAIL" ]; then
+            CLAIM_VERDICT_ALL="PASS"
+          fi
+          if [ "$REPORT_REPLAY_VERDICT" = "DIVERGE" ]; then
+            PUBLIC_REPLAY_VERDICT_ALL="DIVERGE"
+          elif [ "$REPORT_REPLAY_VERDICT" = "MATCH" ] && [ "$PUBLIC_REPLAY_VERDICT_ALL" != "DIVERGE" ]; then
+            PUBLIC_REPLAY_VERDICT_ALL="MATCH"
+          fi
+          if [ "$REPORT_TRUST_VERDICT" = "UNTRUSTED" ]; then
+            TRUST_VERDICT_ALL="UNTRUSTED"
+          elif [ "$REPORT_TRUST_VERDICT" = "PASS" ] && [ "$TRUST_VERDICT_ALL" != "UNTRUSTED" ]; then
+            TRUST_VERDICT_ALL="PASS"
+          fi
+          if [ "$REPORT_OVERALL_VERDICT" = "TAMPERED" ]; then
+            OVERALL_VERDICT_ALL="TAMPERED"
+          elif [ "$REPORT_OVERALL_VERDICT" = "UNTRUSTED" ] && [ "$OVERALL_VERDICT_ALL" != "TAMPERED" ]; then
+            OVERALL_VERDICT_ALL="UNTRUSTED"
+          elif [ "$REPORT_OVERALL_VERDICT" = "REPLAY_DIVERGED" ] && [ "$OVERALL_VERDICT_ALL" != "TAMPERED" ] && [ "$OVERALL_VERDICT_ALL" != "UNTRUSTED" ]; then
+            OVERALL_VERDICT_ALL="REPLAY_DIVERGED"
+          elif [ "$REPORT_OVERALL_VERDICT" = "HONEST_FAIL" ] && [ "$OVERALL_VERDICT_ALL" = "PASS" ]; then
+            OVERALL_VERDICT_ALL="HONEST_FAIL"
           fi
 
           # Build per-pack summary row
@@ -596,6 +761,7 @@ runs:
         echo "claims=$CLAIMS_ALL" >> "$GITHUB_OUTPUT"
         echo "exit_code=$WORST_EXIT" >> "$GITHUB_OUTPUT"
         echo "pack_count=$PACK_COUNT" >> "$GITHUB_OUTPUT"
+        _write_public_outputs "$PACK_ROOT_SHA256" "$INTEGRITY_VERDICT_ALL" "$CLAIM_VERDICT_ALL" "$TRUST_VERDICT_ALL" "$OVERALL_VERDICT_ALL" "$VERIFY_REPORT_JSON" "$PUBLIC_REPLAY_VERDICT_ALL"
         _write_replay_outputs "not_requested" "N/A" "0" "[]"
 
         # Build full summary markdown

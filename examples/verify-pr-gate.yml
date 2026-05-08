@@ -1,0 +1,56 @@
+name: Assay Verification Gate
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify proof pack
+        id: assay
+        uses: Haserjian/assay-verify-action@v1
+        with:
+          assay-version: "1.23.0"
+          pack-path: "proof_pack_*/"
+          require-claim-pass: "true"
+
+      - name: Write public verify report
+        if: always()
+        run: |
+          PACK_DIR="$(find . -maxdepth 1 -type d -name 'proof_pack_*' | head -n 1)"
+          test -n "$PACK_DIR"
+          set +e
+          assay verify-pack "$PACK_DIR" --json --out verify_report.json > verify_report.stdout.json
+          test -s verify_report.json
+
+      - name: Install cosign
+        if: always()
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign verify report
+        if: always()
+        run: |
+          cosign sign-blob \
+            --yes \
+            --bundle verify_report.sigstore.json \
+            verify_report.json
+
+      - name: Upload verification artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: assay-verification-report
+          path: |
+            verify_report.json
+            verify_report.sigstore.json
+            verify_report.stdout.json
+            proof_pack_*/pack_manifest.json

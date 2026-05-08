@@ -44,7 +44,9 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       pull-requests: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -207,11 +209,48 @@ the signed proof-pack bytes, declared claims, and pinned signer policy.
 | `claims` | `PASS`, `FAIL`, or `N/A` |
 | `exit-code` | `0` (all pass), `1` (claim fail), `2` (integrity fail) |
 | `pack-count` | Number of packs verified |
+| `pack-root-sha256` | Comma-separated `pack_root_sha256` values for verified packs |
+| `integrity-verdict` | Public integrity verdict: `PASS` or `TAMPERED` |
+| `claim-verdict` | Public claim verdict: `PASS`, `HONEST_FAIL`, or `NOT_EVALUATED` |
 | `replay-state` | Machine-readable replay execution state |
-| `replay-verdict` | Aggregate replay verdict or `N/A` |
+| `replay-verdict` | Legacy/action replay-mode verdict: `MATCH`, `DIVERGE`, `INTEGRITY_FAIL`, or `N/A` |
+| `public-replay-verdict` | Public `verify_report.json` replay channel: `MATCH`, `DIVERGE`, or `NOT_RUN` |
 | `replay-roots-matched` | Number of replay roots matched during discovery |
 | `replay-results-json` | Compact JSON array of per-root replay results |
+| `trust-verdict` | Public trust verdict: `PASS`, `UNTRUSTED`, or `NOT_EVALUATED` |
+| `overall-verdict` | Public aggregate verdict: `PASS`, `HONEST_FAIL`, `TAMPERED`, `UNTRUSTED`, or `REPLAY_DIVERGED` |
+| `verify-report-json` | Compact JSON array of per-pack public verify report rows |
 | `summary` | Markdown summary of results |
+
+## Signed verification report
+
+Every consequential PR should emit a signed, portable verification report that
+tells reviewers whether the evidence pack was intact, what claim it supported,
+and how to verify the result themselves.
+
+The public artifact set is:
+
+- `pack_manifest.json`
+- `verify_report.json`
+- `verify_report.sigstore.json`
+
+See [examples/verify-pr-gate.yml](./examples/verify-pr-gate.yml) for a full
+workflow that verifies a pack, writes `verify_report.json`, signs it with
+`cosign sign-blob --bundle`, and uploads the report plus the pack manifest.
+The example pins `assay-version: "1.23.0"`, the first `assay-ai` release with
+the public `verify_report.json` contract.
+
+Verify the signed report with identity and issuer constraints:
+
+```bash
+cosign verify-blob verify_report.json \
+  --bundle verify_report.sigstore.json \
+  --certificate-identity-regexp "<expected workflow identity>" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+Do not treat a PR comment or GitHub artifact listing as the proof. The signed
+report and pack manifest are the proof-bearing artifacts.
 
 ## Exit code contract
 
