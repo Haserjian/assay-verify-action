@@ -19,7 +19,8 @@ jobs:
         id: assay
         uses: Haserjian/assay-verify-action@v1
         with:
-          assay-version: "1.23.0"
+          # For reproducible buyer gates, pin this to the published assay-ai
+          # release that contains assay.verify_report.v0.1.
           pack-path: "proof_pack_*/"
           require-claim-pass: "true"
 
