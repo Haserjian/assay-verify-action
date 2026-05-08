@@ -237,8 +237,10 @@ The public artifact set is:
 See [examples/verify-pr-gate.yml](./examples/verify-pr-gate.yml) for a full
 workflow that verifies a pack, writes `verify_report.json`, signs it with
 `cosign sign-blob --bundle`, and uploads the report plus the pack manifest.
-The example pins `assay-version: "1.23.0"`, the first `assay-ai` release with
-the public `verify_report.json` contract.
+For reproducible buyer gates, pin `assay-version` to the published `assay-ai`
+release that contains `assay.verify_report.v0.1`. Do not pin this public
+contract example to `1.23.0`; that tag predates the merged public contract in
+`Haserjian/assay#111`.
 
 Verify the signed report with identity and issuer constraints:
 
